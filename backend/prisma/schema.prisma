@@ -1,0 +1,127 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Simulated Enums (enforced in application code):
+// Role: "ADMIN", "VENDOR", "KITCHEN", "CUSTOMER"
+// OrderStatus: "PENDING", "PAID", "PREPARING", "READY", "COMPLETED", "CANCELLED"
+// PaymentStatus: "UNPAID", "PENDING_VERIFICATION", "VERIFIED", "Paid", "COD", "FAILED"
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("CUSTOMER") // ADMIN, VENDOR, KITCHEN, CUSTOMER
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orders    Order[]
+}
+
+model MenuItem {
+  id          Int         @id @default(autoincrement())
+  name        String
+  description String?
+  price       Float
+  type        String?     @default("food") // e.g. food, drink, dessert
+  category    String
+  stock       Int         @default(0)
+  prepTime    Int         @default(5)      // added prepTime in minutes
+  imageUrl    String?
+  isActive    Boolean     @default(true)
+  orderItems  OrderItem[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Order {
+  id            Int            @id @default(autoincrement())
+  tableId       String?
+  customerEmail String?
+  emailVerified Boolean        @default(false)
+  status        String         @default("PENDING") // OrderStatus
+  total         Float
+  paymentStatus String         @default("UNPAID") // PaymentStatus
+  paymentMethod String?        // e.g. "Easypaisa", "JazzCash", "COD"
+  paymentTxId   String?        @unique
+  userId        Int
+  user          User           @relation(fields: [userId], references: [id])
+  orderItems    OrderItem[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  payment       Payment?
+  etaPrediction ETAPrediction?
+}
+
+model OrderItem {
+  id         Int      @id @default(autoincrement())
+  orderId    Int
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId Int
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  quantity   Int
+  price      Float
+}
+
+model Payment {
+  id            Int           @id @default(autoincrement())
+  orderId       Int           @unique
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount        Float
+  method        String        // e.g. "Easypaisa", "JazzCash", "COD"
+  txId          String?       @unique
+  status        String        @default("UNPAID") // PaymentStatus
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model ETAPrediction {
+  id              Int           @id @default(autoincrement())
+  orderId         Int?          @unique
+  order           Order?        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  baseEta         Float
+  adjustedEta     Float
+  actualTime      Float?
+  queueLength     Int
+  kitchenLoad     String
+  peakHour        Boolean
+  historicalDelay Float
+  createdAt       DateTime      @default(now())
+}
+
+model DemandForecast {
+  id            Int           @id @default(autoincrement())
+  menuItemName  String
+  forecastDate  DateTime
+  predictedQty  Float
+  confidence    Float?
+  features      String?       // JSON string of features: weekday, month, weather, exams, promotions
+  createdAt     DateTime      @default(now())
+}
+
+model InventoryItem {
+  id           Int            @id @default(autoincrement())
+  name         String         @unique
+  stockLevel   Float          @default(0.0)
+  unit         String         // e.g., "kg", "liters", "units"
+  minThreshold Float          @default(10.0)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  logs         InventoryLog[]
+}
+
+model InventoryLog {
+  id              Int           @id @default(autoincrement())
+  inventoryItemId Int
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  changeQty       Float
+  type            String        // "DEDUCTION", "RESTOCK", "WASTAGE"
+  reason          String?
+  createdAt       DateTime      @default(now())
+}
