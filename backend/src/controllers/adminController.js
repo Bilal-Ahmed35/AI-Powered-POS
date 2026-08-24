@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const QRCode = require('qrcode');
 const { prisma } = require('../config/db');
 
 const getDashboardStats = async (req, res) => {
@@ -73,6 +74,33 @@ const getDashboardStats = async (req, res) => {
       count: menuItems.filter(item => item.category === cat).length
     }));
 
+    // 7. Top Selling Items in selected period
+    const paidOrderItems = await prisma.orderItem.findMany({
+      where: {
+        order: {
+          status: { in: ['PAID', 'PREPARING', 'READY', 'COMPLETED'] },
+          createdAt: { gte: startDate }
+        }
+      },
+      include: {
+        menuItem: true
+      }
+    });
+
+    const itemAgg = {};
+    paidOrderItems.forEach(item => {
+      const name = item.menuItem?.name || `Item #${item.menuItemId}`;
+      if (!itemAgg[name]) {
+        itemAgg[name] = { name, quantity: 0, revenue: 0, category: item.menuItem?.category || 'General' };
+      }
+      itemAgg[name].quantity += item.quantity;
+      itemAgg[name].revenue += item.price * item.quantity;
+    });
+
+    const topItems = Object.values(itemAgg)
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 6);
+
     return res.json({
       period,
       metrics: {
@@ -84,7 +112,8 @@ const getDashboardStats = async (req, res) => {
       },
       lowStockAlerts,
       recentOrders,
-      categoryStats
+      categoryStats,
+      topItems
     });
   } catch (error) {
     console.error('Fetch dashboard stats error:', error);
@@ -309,6 +338,66 @@ const getAdminOrders = async (req, res) => {
   }
 };
 
+// QR Code Generation for Tables
+const generateTableQR = async (req, res) => {
+  const { tableId } = req.params;
+  const baseUrl = req.query.baseUrl || process.env.FRONTEND_URL || 'http://localhost:5173';
+  const tableUrl = `${baseUrl.replace(/\/$/, '')}/customer/table/${encodeURIComponent(tableId)}`;
+
+  try {
+    const qrDataUrl = await QRCode.toDataURL(tableUrl, {
+      errorCorrectionLevel: 'H',
+      margin: 2,
+      width: 400,
+      color: {
+        dark: '#1e1b4b',
+        light: '#ffffff'
+      }
+    });
+
+    return res.json({
+      tableId,
+      url: tableUrl,
+      qrDataUrl
+    });
+  } catch (error) {
+    console.error('QR generation error:', error);
+    return res.status(500).json({ error: 'Failed to generate table QR code.' });
+  }
+};
+
+const generateBatchQRs = async (req, res) => {
+  const { count = 20, baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173' } = req.query;
+  const numTables = Math.min(Math.max(parseInt(count, 10) || 20, 1), 100);
+
+  try {
+    const qrList = [];
+    for (let i = 1; i <= numTables; i++) {
+      const tableId = i.toString();
+      const tableUrl = `${baseUrl.replace(/\/$/, '')}/customer/table/${tableId}`;
+      const qrDataUrl = await QRCode.toDataURL(tableUrl, {
+        errorCorrectionLevel: 'H',
+        margin: 2,
+        width: 320,
+        color: {
+          dark: '#1e1b4b',
+          light: '#ffffff'
+        }
+      });
+      qrList.push({
+        tableId,
+        url: tableUrl,
+        qrDataUrl
+      });
+    }
+
+    return res.json({ tables: qrList });
+  } catch (error) {
+    console.error('Batch QR generation error:', error);
+    return res.status(500).json({ error: 'Failed to generate batch QR codes.' });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getStaffList,
@@ -316,5 +405,7 @@ module.exports = {
   updateStaff,
   updateStaffPassword,
   toggleStaffStatus,
-  getAdminOrders
+  getAdminOrders,
+  generateTableQR,
+  generateBatchQRs
 };

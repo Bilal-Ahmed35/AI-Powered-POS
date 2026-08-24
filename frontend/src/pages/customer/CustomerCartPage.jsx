@@ -18,10 +18,18 @@ import {
   Check,
   RotateCcw,
   ChevronRight,
+  Smartphone,
+  Lock,
 } from 'lucide-react';
 
 const CustomerCartPage = ({ user }) => {
   const navigate = useNavigate();
+
+  // ─── Online Mobile Wallet Payment Modal state ────────────────────────────
+  const [showOnlinePaymentModal, setShowOnlinePaymentModal] = useState(false);
+  const [walletProvider, setWalletProvider] = useState('Easypaisa');
+  const [walletPhone, setWalletPhone] = useState('0300-1234567');
+  const [authorizingPayment, setAuthorizingPayment] = useState(false);
 
   // ─── Persistent cart state ────────────────────────────────────────────────
   const [cart, setCart] = useState(() => {
@@ -248,12 +256,8 @@ const CustomerCartPage = ({ user }) => {
   };
 
   // ─── Place order ─────────────────────────────────────────────────────────
-  const handlePlaceOrder = async () => {
+  const executeOrderPlacement = async (overrideMethod, overrideTxId) => {
     setError('');
-    if (!otpVerified) {
-      setError('Please verify your email via OTP before placing an order.');
-      return;
-    }
     const items = Object.values(cart).map(item => ({
       menuItemId: item.id,
       quantity: item.quantity,
@@ -264,16 +268,21 @@ const CustomerCartPage = ({ user }) => {
     }
     setPlacingOrder(true);
     try {
+      const isOnline = Boolean(overrideTxId);
       const response = await api.post('/orders', {
         items,
         tableId,
-        paymentMethod,
+        paymentMethod: overrideMethod || paymentMethod,
+        paymentStatus: isOnline ? 'PENDING_VERIFICATION' : 'UNPAID',
+        paymentTxId: overrideTxId || null,
+        status: 'PENDING',
         customerEmail: guestEmail || user?.email,
         emailVerified: true,
       });
       const placedOrder = response.data.order;
       setActiveOrder(placedOrder);
       clearCart();
+      setShowOnlinePaymentModal(false);
       setCheckoutDone(true);
       localStorage.setItem('customer_checkoutStep', 'tracking');
     } catch (err) {
@@ -281,7 +290,35 @@ const CustomerCartPage = ({ user }) => {
       setError(err.response?.data?.error || 'Failed to place order. Please check stock levels.');
     } finally {
       setPlacingOrder(false);
+      setAuthorizingPayment(false);
     }
+  };
+
+  const handlePlaceOrder = async () => {
+    setError('');
+    if (!otpVerified) {
+      setError('Please verify your email via OTP before placing an order.');
+      return;
+    }
+    if (paymentMethod !== 'COD') {
+      setShowOnlinePaymentModal(true);
+    } else {
+      executeOrderPlacement('COD', null);
+    }
+  };
+
+  const handleAuthorizeOnlineWallet = (e) => {
+    e.preventDefault();
+    if (!walletPhone) return;
+    setAuthorizingPayment(true);
+    
+    // Simulate brief payment network authorization (1.2s)
+    setTimeout(() => {
+      const prefix = walletProvider === 'Easypaisa' ? 'EP' : walletProvider === 'JazzCash' ? 'JC' : 'NP';
+      const randomNum = Math.floor(100000 + Math.random() * 900000);
+      const simulatedTx = `${prefix}-${randomNum}`;
+      executeOrderPlacement(walletProvider, simulatedTx);
+    }, 1200);
   };
 
   // ─── Order status helper ──────────────────────────────────────────────────
@@ -780,6 +817,115 @@ const CustomerCartPage = ({ user }) => {
           </div>
         )}
       </main>
+
+      {/* Online Mobile Wallet Payment Modal */}
+      {showOnlinePaymentModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex justify-center items-center p-4 z-50 animate-fade-in">
+          <div className="bg-white border border-[#E8E8F0] rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
+            <div className="flex justify-between items-center border-b border-[#E8E8F0] pb-3">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-xl bg-[#5B3DF5]/10 text-[#5B3DF5] flex items-center justify-center">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-[#17172B]">Mobile Wallet Payment</h3>
+                  <span className="text-[10px] text-[#62627A]">Instant Digital Authorization</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowOnlinePaymentModal(false)}
+                disabled={authorizingPayment}
+                className="text-[#62627A] hover:text-[#17172B] font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Provider Selector */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-[#17172B]">Choose Mobile Wallet</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'Easypaisa', label: 'Easypaisa', color: 'border-emerald-500 bg-emerald-50 text-emerald-700' },
+                  { id: 'JazzCash', label: 'JazzCash', color: 'border-amber-500 bg-amber-50 text-amber-700' },
+                  { id: 'Nayapay', label: 'Nayapay / Raast', color: 'border-purple-500 bg-purple-50 text-purple-700' },
+                ].map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setWalletProvider(p.id)}
+                    className={`p-3 rounded-2xl border-2 text-xs font-bold text-center transition-all cursor-pointer ${
+                      walletProvider === p.id
+                        ? `${p.color} shadow-sm`
+                        : 'border-[#E8E8F0] text-[#62627A] hover:border-gray-300'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Amount Summary */}
+            <div className="p-3.5 bg-[#F3EFFF] border border-[#5B3DF5]/20 rounded-2xl flex justify-between items-center">
+              <div>
+                <span className="text-[10px] text-[#62627A] font-bold uppercase block">Amount Payable</span>
+                <span className="text-xs text-[#5B3DF5] font-semibold">{tableId} • {guestEmail || user?.email}</span>
+              </div>
+              <strong className="text-lg font-black font-mono text-[#5B3DF5]">Rs. {getTotal()}</strong>
+            </div>
+
+            <form onSubmit={handleAuthorizeOnlineWallet} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-[#17172B]">Registered Mobile Account Number</label>
+                <div className="relative">
+                  <input
+                    type="tel"
+                    required
+                    value={walletPhone}
+                    onChange={(e) => setWalletPhone(e.target.value)}
+                    placeholder="0300-1234567"
+                    disabled={authorizingPayment}
+                    className="w-full bg-white border border-[#E8E8F0] rounded-xl px-3.5 py-2.5 pl-9 text-xs text-[#17172B] focus:outline-none focus:border-[#5B3DF5] font-mono"
+                  />
+                  <Smartphone className="w-4 h-4 text-[#62627A] absolute left-3 top-3" />
+                </div>
+                <p className="text-[10px] text-[#62627A] mt-1">
+                  A simulated prompt will authorize payment securely and submit your order immediately.
+                </p>
+              </div>
+
+              <div className="flex space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOnlinePaymentModal(false)}
+                  disabled={authorizingPayment}
+                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-[#17172B] rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={authorizingPayment || !walletPhone}
+                  className="flex-1 py-2.5 bg-[#5B3DF5] hover:bg-[#4F46E5] text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center justify-center space-x-1.5"
+                >
+                  {authorizingPayment ? (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Authorizing…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Authorize & Pay</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

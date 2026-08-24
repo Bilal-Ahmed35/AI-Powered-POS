@@ -15,6 +15,8 @@ const VendorDashboard = ({ user, onLogout }) => {
 
   // Menu item CRUD modal states
   const [showModal, setShowModal] = useState(false); // false, 'add', 'edit'
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
   const [modalData, setModalData] = useState({
     id: null,
     name: '',
@@ -22,8 +24,16 @@ const VendorDashboard = ({ user, onLogout }) => {
     type: 'food',
     category: 'Food',
     stock: '50',
-    description: ''
+    prepTime: '5',
+    imageUrl: '',
+    description: '',
+    isActive: true
   });
+
+  const showToast = (msg, type = 'success') => {
+    setToastMessage({ text: msg, type });
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   useEffect(() => {
     localStorage.setItem('vendor_activeTab', activeTab);
@@ -81,7 +91,7 @@ const VendorDashboard = ({ user, onLogout }) => {
         socket.off('inventory:update');
       }
     };
-  }, []);
+  }, [user]);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -150,6 +160,8 @@ const VendorDashboard = ({ user, onLogout }) => {
       type: 'food',
       category: 'Food',
       stock: '50',
+      prepTime: '5',
+      imageUrl: '',
       description: '',
       isActive: true
     });
@@ -164,6 +176,8 @@ const VendorDashboard = ({ user, onLogout }) => {
       type: item.type || 'food',
       category: item.category,
       stock: item.stock.toString(),
+      prepTime: (item.prepTime || 5).toString(),
+      imageUrl: item.imageUrl || '',
       description: item.description || '',
       isActive: item.isActive
     });
@@ -178,7 +192,9 @@ const VendorDashboard = ({ user, onLogout }) => {
       price: parseFloat(modalData.price),
       type: modalData.type,
       category: modalData.category,
-      stock: parseInt(modalData.stock),
+      stock: parseInt(modalData.stock, 10) || 0,
+      prepTime: parseInt(modalData.prepTime, 10) || 5,
+      imageUrl: modalData.imageUrl?.trim() || null,
       description: modalData.description,
       isActive: modalData.isActive
     };
@@ -186,8 +202,10 @@ const VendorDashboard = ({ user, onLogout }) => {
     try {
       if (showModal === 'add') {
         await api.post('/menu', payload);
+        showToast('Menu item created successfully!');
       } else if (showModal === 'edit') {
         await api.put(`/menu/${modalData.id}`, payload);
+        showToast('Menu item updated successfully!');
       }
       setShowModal(false);
       fetchMenu();
@@ -198,15 +216,16 @@ const VendorDashboard = ({ user, onLogout }) => {
   };
 
   const handleDeleteMenuItem = async (itemId) => {
-    if (!window.confirm('Are you sure you want to delete this menu item?')) return;
     setError('');
     try {
       const response = await api.delete(`/menu/${itemId}`);
-      alert(response.data.message);
+      showToast(response.data.message || 'Menu item deleted successfully.');
+      setDeleteConfirmItem(null);
       fetchMenu();
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.error || 'Failed to delete menu item.');
+      setDeleteConfirmItem(null);
     }
   };
 
@@ -253,6 +272,21 @@ const VendorDashboard = ({ user, onLogout }) => {
             </button>
           </div>
         </div>
+
+        {/* Toast Notification Banner */}
+        {toastMessage && (
+          <div className={`p-3.5 rounded-2xl border text-xs font-bold flex items-center justify-between shadow-xl animate-fade-in ${
+            toastMessage.type === 'error'
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+          }`}>
+            <div className="flex items-center space-x-2">
+              <Check className="w-4 h-4" />
+              <span>{toastMessage.text}</span>
+            </div>
+            <button onClick={() => setToastMessage(null)} className="text-xs font-bold opacity-60 hover:opacity-100">✕</button>
+          </div>
+        )}
 
         {error && (
           <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl text-xs font-semibold flex items-center space-x-2.5 animate-glow-pulse">
@@ -480,9 +514,24 @@ const VendorDashboard = ({ user, onLogout }) => {
                   {menu.map((item) => (
                     <tr key={item.id} className="hover:bg-[var(--bg-color)]/20 transition-colors">
                       <td className="p-4.5 font-medium text-[var(--text-main)] max-w-xs">
-                        <div>
-                          <p className="text-sm font-semibold tracking-tight">{item.name}</p>
-                          <p className="text-[10px] text-[var(--text-muted)] truncate mt-0.5">{item.description || 'No description provided'}</p>
+                        <div className="flex items-center space-x-3">
+                          {item.imageUrl ? (
+                            <img
+                              src={item.imageUrl}
+                              alt={item.name}
+                              className="w-10 h-10 object-cover rounded-xl border border-[var(--border-color)] shrink-0 bg-[var(--card-bg)]"
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-black shrink-0">
+                              {item.name.charAt(0)}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold tracking-tight truncate">{item.name}</p>
+                            <p className="text-[10px] text-[var(--text-muted)] truncate mt-0.5">{item.description || 'No description provided'}</p>
+                            <span className="text-[9px] text-indigo-400 font-mono">⏱️ ~{item.prepTime || 5} mins prep</span>
+                          </div>
                         </div>
                       </td>
                       <td className="p-4.5">
@@ -496,7 +545,7 @@ const VendorDashboard = ({ user, onLogout }) => {
                         </span>
                       </td>
                       <td className="p-4.5 font-mono font-bold text-[var(--text-main)]">
-                        ${item.price.toFixed(2)}
+                        Rs. {item.price.toFixed(2)}
                       </td>
                       <td className="p-4.5">
                         <span className={`font-bold ${item.stock <= 5 ? 'text-rose-400 animate-pulse font-extrabold' : 'text-[var(--text-main)]'}`}>
@@ -525,12 +574,14 @@ const VendorDashboard = ({ user, onLogout }) => {
                           <button
                             onClick={() => handleOpenEditModal(item)}
                             className="p-2 bg-[var(--bg-color)] border border-[var(--border-color)] hover:bg-[var(--bg-color)]/60 text-[var(--text-muted)] hover:text-[var(--text-main)] rounded-lg transition-colors cursor-pointer"
+                            title="Edit Item Details"
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => handleDeleteMenuItem(item.id)}
+                            onClick={() => setDeleteConfirmItem(item)}
                             className="p-2 bg-red-950/10 border border-red-900/20 hover:border-red-500/40 text-red-400 hover:text-red-300 rounded-lg transition-colors cursor-pointer"
+                            title="Delete Item"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -665,7 +716,7 @@ const VendorDashboard = ({ user, onLogout }) => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3.5">
+              <div className="grid grid-cols-4 gap-3">
                 <div>
                   <label className="block text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
                     Type
@@ -673,7 +724,7 @@ const VendorDashboard = ({ user, onLogout }) => {
                   <select
                     value={modalData.type}
                     onChange={(e) => setModalData({ ...modalData, type: e.target.value })}
-                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] cursor-pointer"
+                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] cursor-pointer"
                   >
                     <option value="food" className="bg-[var(--card-bg)] text-[var(--text-main)]">Food</option>
                     <option value="drink" className="bg-[var(--card-bg)] text-[var(--text-main)]">Drink</option>
@@ -689,11 +740,13 @@ const VendorDashboard = ({ user, onLogout }) => {
                   <select
                     value={modalData.category}
                     onChange={(e) => setModalData({ ...modalData, category: e.target.value })}
-                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] cursor-pointer"
+                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] cursor-pointer"
                   >
                     <option value="Food" className="bg-[var(--card-bg)] text-[var(--text-main)]">Food</option>
                     <option value="Sides" className="bg-[var(--card-bg)] text-[var(--text-main)]">Sides</option>
                     <option value="Beverages" className="bg-[var(--card-bg)] text-[var(--text-main)]">Beverages</option>
+                    <option value="Desserts" className="bg-[var(--card-bg)] text-[var(--text-main)]">Desserts</option>
+                    <option value="Snacks" className="bg-[var(--card-bg)] text-[var(--text-main)]">Snacks</option>
                   </select>
                 </div>
                 <div>
@@ -706,8 +759,45 @@ const VendorDashboard = ({ user, onLogout }) => {
                     value={modalData.stock}
                     onChange={(e) => setModalData({ ...modalData, stock: e.target.value })}
                     placeholder="50"
-                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)] font-mono"
+                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)] font-mono"
                   />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
+                    Prep (Mins)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={modalData.prepTime}
+                    onChange={(e) => setModalData({ ...modalData, prepTime: e.target.value })}
+                    placeholder="5"
+                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)] font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
+                  Item Image URL (Optional)
+                </label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="url"
+                    value={modalData.imageUrl}
+                    onChange={(e) => setModalData({ ...modalData, imageUrl: e.target.value })}
+                    placeholder="https://images.unsplash.com/... or direct image link"
+                    className="flex-1 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)]"
+                  />
+                  {modalData.imageUrl && (
+                    <img
+                      src={modalData.imageUrl}
+                      alt="Preview"
+                      className="w-10 h-10 object-cover rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] shrink-0"
+                      onError={(e) => { e.target.style.opacity = '0.3'; }}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -719,8 +809,8 @@ const VendorDashboard = ({ user, onLogout }) => {
                   value={modalData.description}
                   onChange={(e) => setModalData({ ...modalData, description: e.target.value })}
                   placeholder="Detail menu item ingredients, serving portions, allergens, prep conditions..."
-                  rows={3}
-                  className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)] resize-none font-sans"
+                  rows={2}
+                  className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)] resize-none font-sans"
                 />
               </div>
 
@@ -754,6 +844,37 @@ const VendorDashboard = ({ user, onLogout }) => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmItem && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex justify-center items-center p-4 z-50 animate-fade-in">
+          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-center">
+            <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-base text-[var(--text-main)] font-display">Delete Menu Item</h3>
+              <p className="text-xs text-[var(--text-muted)] mt-1">
+                Are you sure you want to remove <strong className="text-[var(--text-main)]">{deleteConfirmItem.name}</strong> from the active menu?
+              </p>
+            </div>
+            <div className="flex space-x-3 pt-2">
+              <button
+                onClick={() => setDeleteConfirmItem(null)}
+                className="flex-1 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl text-xs font-bold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteMenuItem(deleteConfirmItem.id)}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
+              >
+                Yes, Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

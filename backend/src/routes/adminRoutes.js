@@ -6,7 +6,9 @@ const {
   updateStaff,
   updateStaffPassword,
   toggleStaffStatus,
-  getAdminOrders
+  getAdminOrders,
+  generateTableQR,
+  generateBatchQRs
 } = require('../controllers/adminController');
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
@@ -19,6 +21,10 @@ router.use(roleMiddleware(['ADMIN'])); // Restricted to ADMIN role only
 // Stats & Order Search
 router.get('/stats', getDashboardStats);
 router.get('/orders', getAdminOrders);
+
+// QR Code Generation
+router.get('/qr/batch', generateBatchQRs);
+router.get('/qr/:tableId', generateTableQR);
 
 // Staff Management
 router.get('/staff', getStaffList);

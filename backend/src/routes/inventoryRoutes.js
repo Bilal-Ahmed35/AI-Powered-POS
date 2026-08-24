@@ -13,13 +13,13 @@ const roleMiddleware = require('../middleware/roleMiddleware');
 const router = express.Router();
 
 router.use(authMiddleware);
-router.use(roleMiddleware(['ADMIN', 'VENDOR'])); // Inventory is restricted to Admin/Vendor
+router.use(roleMiddleware(['ADMIN', 'VENDOR', 'KITCHEN'])); // Inventory is accessible to all staff roles
 
 router.get('/', getInventoryItems);
 router.get('/logs', getInventoryLogs);
 router.get('/alerts', getInventoryAlerts);
-router.post('/', addInventoryItem);
-router.post('/:id/restock', restockItem);
+router.post('/', roleMiddleware(['ADMIN', 'VENDOR']), addInventoryItem);
+router.post('/:id/restock', roleMiddleware(['ADMIN', 'VENDOR']), restockItem);
 router.get('/:id/forecast', getForecast);
 
 module.exports = router;

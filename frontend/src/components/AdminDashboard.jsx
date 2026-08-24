@@ -20,7 +20,13 @@ import {
   X,
   ShoppingBag,
   Clock,
-  ShieldCheck
+  ShieldCheck,
+  QrCode,
+  Printer,
+  Download,
+  ExternalLink,
+  Flame,
+  Trophy
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -68,6 +74,19 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [orderSearchTable, setOrderSearchTable] = useState('');
   const [ordersLoading, setOrdersLoading] = useState(false);
 
+  // QR Codes state
+  const [tableQRs, setTableQRs] = useState([]);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [selectedTableQR, setSelectedTableQR] = useState(null);
+  const [qrCount, setQrCount] = useState(12);
+  const [singleTableInput, setSingleTableInput] = useState('1');
+  const [toastMessage, setToastMessage] = useState(null);
+
+  const showToast = (msg, type = 'success') => {
+    setToastMessage({ text: msg, type });
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
   useEffect(() => {
     localStorage.setItem('admin_selectedItemId', selectedItemId);
   }, [selectedItemId]);
@@ -77,6 +96,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       fetchDashboardData();
       fetchStaffList();
       fetchAdminOrders();
+      fetchTableQRs(12);
     }
 
     const socket = getSocket();
@@ -245,6 +265,257 @@ const AdminDashboard = ({ user, onLogout }) => {
     }
   };
 
+  const fetchTableQRs = async (count = qrCount) => {
+    setQrLoading(true);
+    try {
+      const res = await api.get(`/admin/qr/batch?count=${count}`);
+      setTableQRs(res.data.tables || []);
+    } catch (err) {
+      console.error('Fetch QRs error:', err);
+      showToast('Failed to generate table QR codes', 'error');
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  const fetchSingleQR = async (tId) => {
+    if (!tId) return;
+    setQrLoading(true);
+    try {
+      const res = await api.get(`/admin/qr/${encodeURIComponent(tId)}`);
+      setSelectedTableQR(res.data);
+      showToast(`QR for Table ${tId} generated successfully!`);
+    } catch (err) {
+      console.error('Fetch single QR error:', err);
+      showToast(`Failed to generate QR for Table ${tId}`, 'error');
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  const handlePrintQR = (table) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      showToast('Please allow popups to print table QR card', 'error');
+      return;
+    }
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Table ${table.tableId} QR - SWIPEBITE</title>
+          <style>
+            @page { size: A5 landscape; margin: 15mm; }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 90vh;
+              margin: 0;
+              background: #fff;
+              color: #0f172a;
+            }
+            .card {
+              border: 3px solid #1e1b4b;
+              border-radius: 24px;
+              padding: 36px 44px;
+              text-align: center;
+              max-width: 420px;
+              box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+            }
+            .brand {
+              font-size: 24px;
+              font-weight: 900;
+              letter-spacing: 2px;
+              color: #4f46e5;
+              text-transform: uppercase;
+            }
+            .tagline {
+              font-size: 11px;
+              color: #64748b;
+              text-transform: uppercase;
+              letter-spacing: 1.5px;
+              margin-top: 4px;
+              margin-bottom: 20px;
+            }
+            .table-badge {
+              display: inline-block;
+              background: #1e1b4b;
+              color: #ffffff;
+              font-size: 22px;
+              font-weight: 800;
+              padding: 8px 24px;
+              border-radius: 12px;
+              margin-bottom: 20px;
+              letter-spacing: 0.5px;
+            }
+            .qr-img {
+              width: 220px;
+              height: 220px;
+              border-radius: 16px;
+              border: 1px solid #e2e8f0;
+              padding: 8px;
+              background: #fff;
+            }
+            .instruction {
+              font-size: 13px;
+              font-weight: 700;
+              color: #0f172a;
+              margin-top: 18px;
+            }
+            .subtext {
+              font-size: 11px;
+              color: #64748b;
+              margin-top: 4px;
+            }
+            .url {
+              font-size: 9px;
+              color: #94a3b8;
+              font-family: monospace;
+              margin-top: 14px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="brand">🍽️ SWIPEBITE</div>
+            <div class="tagline">Smart University Canteen</div>
+            <div class="table-badge">TABLE ${table.tableId}</div>
+            <br/>
+            <img class="qr-img" src="${table.qrDataUrl}" alt="Table ${table.tableId} QR" />
+            <div class="instruction">Scan with Phone Camera to Order</div>
+            <div class="subtext">Browse Menu • Verify OTP • Pay & Track Live</div>
+            <div class="url">${table.url}</div>
+          </div>
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => window.close(), 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handlePrintAllQRs = () => {
+    if (tableQRs.length === 0) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      showToast('Please allow popups to print table QR cards', 'error');
+      return;
+    }
+    const cardsHtml = tableQRs.map(table => `
+      <div class="card page-break">
+        <div class="brand">🍽️ SWIPEBITE</div>
+        <div class="tagline">Smart University Canteen</div>
+        <div class="table-badge">TABLE ${table.tableId}</div>
+        <br/>
+        <img class="qr-img" src="${table.qrDataUrl}" alt="Table ${table.tableId} QR" />
+        <div class="instruction">Scan with Phone Camera to Order</div>
+        <div class="subtext">Browse Menu • Verify OTP • Pay & Track Live</div>
+        <div class="url">${table.url}</div>
+      </div>
+    `).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>All Table QRs - SWIPEBITE</title>
+          <style>
+            @page { size: A5 landscape; margin: 10mm; }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              margin: 0;
+              background: #fff;
+              color: #0f172a;
+            }
+            .page-break {
+              page-break-after: always;
+              break-after: page;
+              height: 90vh;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+            }
+            .card {
+              border: 3px solid #1e1b4b;
+              border-radius: 24px;
+              padding: 30px 40px;
+              text-align: center;
+              max-width: 400px;
+              margin: auto;
+            }
+            .brand {
+              font-size: 22px;
+              font-weight: 900;
+              letter-spacing: 2px;
+              color: #4f46e5;
+              text-transform: uppercase;
+            }
+            .tagline {
+              font-size: 11px;
+              color: #64748b;
+              text-transform: uppercase;
+              letter-spacing: 1.5px;
+              margin-top: 4px;
+              margin-bottom: 16px;
+            }
+            .table-badge {
+              display: inline-block;
+              background: #1e1b4b;
+              color: #ffffff;
+              font-size: 20px;
+              font-weight: 800;
+              padding: 6px 20px;
+              border-radius: 10px;
+              margin-bottom: 16px;
+            }
+            .qr-img {
+              width: 200px;
+              height: 200px;
+              border-radius: 12px;
+              border: 1px solid #e2e8f0;
+              padding: 6px;
+              background: #fff;
+            }
+            .instruction {
+              font-size: 12px;
+              font-weight: 700;
+              color: #0f172a;
+              margin-top: 14px;
+            }
+            .subtext {
+              font-size: 10px;
+              color: #64748b;
+              margin-top: 3px;
+            }
+            .url {
+              font-size: 8px;
+              color: #94a3b8;
+              font-family: monospace;
+              margin-top: 10px;
+            }
+          </style>
+        </head>
+        <body>
+          ${cardsHtml}
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => window.close(), 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   return (
     <div className="min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] p-6 relative overflow-hidden transition-colors duration-300">
       <div className="max-w-7xl mx-auto space-y-8 relative z-10 animate-fade-in">
@@ -293,6 +564,19 @@ const AdminDashboard = ({ user, onLogout }) => {
               >
                 Order Audit
               </button>
+              <button
+                onClick={() => {
+                  setAdminTab('qrcodes');
+                  if (tableQRs.length === 0) fetchTableQRs();
+                }}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  adminTab === 'qrcodes'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
+                }`}
+              >
+                Table QR Codes
+              </button>
             </div>
 
             <button
@@ -304,6 +588,21 @@ const AdminDashboard = ({ user, onLogout }) => {
             </button>
           </div>
         </div>
+
+        {/* Toast Notification Banner */}
+        {toastMessage && (
+          <div className={`p-3.5 rounded-2xl border text-xs font-bold flex items-center justify-between shadow-xl animate-fade-in ${
+            toastMessage.type === 'error'
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+          }`}>
+            <div className="flex items-center space-x-2">
+              <Check className="w-4 h-4" />
+              <span>{toastMessage.text}</span>
+            </div>
+            <button onClick={() => setToastMessage(null)} className="text-xs font-bold opacity-60 hover:opacity-100">✕</button>
+          </div>
+        )}
 
         {error && (
           <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs font-semibold flex items-center space-x-2.5">
@@ -494,6 +793,48 @@ const AdminDashboard = ({ user, onLogout }) => {
                 </div>
               </div>
             </div>
+
+            {/* Top Selling Items Section */}
+            <div className="bg-[var(--card-bg)]/40 backdrop-blur-xl border border-[var(--border-color)] p-6 rounded-2xl shadow-xl space-y-4">
+              <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
+                <div className="flex items-center space-x-2">
+                  <Flame className="w-5 h-5 text-amber-500" />
+                  <h3 className="font-extrabold text-[var(--text-main)] text-base font-display">Top Selling Dishes & Beverages ({period})</h3>
+                </div>
+                <span className="text-[11px] font-bold text-[var(--text-muted)]">By Paid Order Volume</span>
+              </div>
+
+              {(!stats?.topItems || stats.topItems.length === 0) ? (
+                <div className="py-8 text-center text-xs text-[var(--text-muted)]">
+                  No verified sales recorded in this period yet.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {stats.topItems.map((item, idx) => (
+                    <div key={item.name} className="p-4 bg-[var(--bg-color)]/70 border border-[var(--border-color)] rounded-xl flex items-center justify-between space-x-3">
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${
+                          idx === 0 ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                          idx === 1 ? 'bg-slate-400/20 text-slate-300 border border-slate-400/30' :
+                          idx === 2 ? 'bg-amber-700/20 text-amber-600 border border-amber-700/30' :
+                          'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                        }`}>
+                          #{idx + 1}
+                        </span>
+                        <div className="min-w-0 truncate">
+                          <strong className="text-xs font-bold text-[var(--text-main)] block truncate">{item.name}</strong>
+                          <span className="text-[10px] text-[var(--text-muted)] uppercase font-mono">{item.category || 'Food'}</span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-xs font-black text-indigo-400 font-mono block">{item.quantity} sold</span>
+                        <span className="text-[10px] text-[var(--text-muted)] font-mono">Rs. {item.revenue ? item.revenue.toLocaleString() : '0'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </>
         )}
 
@@ -663,6 +1004,205 @@ const AdminDashboard = ({ user, onLogout }) => {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: TABLE QR CODE MANAGEMENT */}
+        {adminTab === 'qrcodes' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* Top Toolbar */}
+            <div className="bg-[var(--card-bg)]/40 backdrop-blur-xl border border-[var(--border-color)] rounded-2xl p-6 shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <QrCode className="w-5 h-5 text-indigo-500" />
+                  <h2 className="font-extrabold text-lg text-[var(--text-main)] font-display">Table QR Code Print Center</h2>
+                </div>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">Generate, test, and print physical table stand cards with instant camera ordering links.</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center space-x-2 bg-[var(--bg-color)] px-3 py-1.5 rounded-xl border border-[var(--border-color)]">
+                  <span className="text-xs font-bold text-[var(--text-muted)]">Tables:</span>
+                  <select
+                    value={qrCount}
+                    onChange={(e) => {
+                      const count = parseInt(e.target.value, 10);
+                      setQrCount(count);
+                      fetchTableQRs(count);
+                    }}
+                    className="bg-transparent text-xs font-bold text-[var(--text-main)] focus:outline-none cursor-pointer"
+                  >
+                    <option value="6">6 Tables</option>
+                    <option value="12">12 Tables</option>
+                    <option value="20">20 Tables</option>
+                    <option value="30">30 Tables</option>
+                    <option value="50">50 Tables</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={() => fetchTableQRs(qrCount)}
+                  disabled={qrLoading}
+                  className="px-4 py-2 bg-[var(--bg-color)] border border-[var(--border-color)] hover:border-indigo-500/30 text-[var(--text-main)] rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${qrLoading ? 'animate-spin' : ''}`} />
+                  <span>Regenerate</span>
+                </button>
+
+                <button
+                  onClick={handlePrintAllQRs}
+                  disabled={tableQRs.length === 0 || qrLoading}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center space-x-2"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print All Table Cards</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Custom Table QR Generator Card */}
+            <div className="bg-[var(--card-bg)]/30 backdrop-blur-xl border border-[var(--border-color)] p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <strong className="text-xs font-bold text-[var(--text-main)] block">Generate Custom Table or Booth QR</strong>
+                <span className="text-[11px] text-[var(--text-muted)]">Create a QR for special dining sections, balcony tables, or VIP booths.</span>
+              </div>
+              <div className="flex items-center space-x-2 w-full sm:w-auto">
+                <input
+                  type="text"
+                  placeholder="e.g. Patio-3 or VIP"
+                  value={singleTableInput}
+                  onChange={(e) => setSingleTableInput(e.target.value)}
+                  className="bg-[var(--bg-color)] border border-[var(--border-color)] rounded-xl px-3.5 py-2 text-xs text-[var(--text-main)] focus:outline-none focus:border-indigo-500 w-36"
+                />
+                <button
+                  onClick={() => fetchSingleQR(singleTableInput)}
+                  disabled={!singleTableInput || qrLoading}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+                >
+                  Generate
+                </button>
+              </div>
+            </div>
+
+            {/* Grid of Table QR Cards */}
+            {qrLoading && tableQRs.length === 0 ? (
+              <div className="py-16 text-center text-xs text-[var(--text-muted)]">
+                <RefreshCw className="w-6 h-6 animate-spin mx-auto text-indigo-500 mb-2" />
+                <span>Generating high-resolution table QR codes...</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {tableQRs.map((t) => (
+                  <div
+                    key={t.tableId}
+                    className="bg-[var(--card-bg)]/50 backdrop-blur-xl border border-[var(--border-color)] rounded-3xl p-5 shadow-lg hover:border-indigo-500/30 transition-all flex flex-col items-center text-center space-y-4 group"
+                  >
+                    {/* Header Badge */}
+                    <div className="flex items-center justify-between w-full">
+                      <span className="px-3 py-1 bg-indigo-600 text-white text-xs font-black rounded-lg uppercase tracking-wider">
+                        Table {t.tableId}
+                      </span>
+                      <a
+                        href={t.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[var(--text-muted)] hover:text-indigo-400 p-1 rounded-md transition-colors"
+                        title="Open in new tab to test customer view"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+
+                    {/* QR Image Container */}
+                    <div className="bg-white p-3 rounded-2xl shadow-inner border border-slate-200">
+                      <img
+                        src={t.qrDataUrl}
+                        alt={`QR code for Table ${t.tableId}`}
+                        className="w-44 h-44 object-contain rounded-lg"
+                      />
+                    </div>
+
+                    {/* Instructions & Link */}
+                    <div className="space-y-1 w-full">
+                      <p className="text-[11px] font-bold text-[var(--text-main)]">Camera Scan Ordering</p>
+                      <p className="text-[9px] text-[var(--text-muted)] font-mono truncate px-2">
+                        /customer/table/{t.tableId}
+                      </p>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="grid grid-cols-2 gap-2 w-full pt-1">
+                      <button
+                        onClick={() => handlePrintQR(t)}
+                        className="py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[11px] font-bold transition-all shadow-md cursor-pointer flex items-center justify-center space-x-1"
+                      >
+                        <Printer className="w-3 h-3" />
+                        <span>Print</span>
+                      </button>
+                      <button
+                        onClick={() => setSelectedTableQR(t)}
+                        className="py-2 px-3 bg-[var(--bg-color)] border border-[var(--border-color)] hover:border-indigo-500/30 text-[var(--text-main)] rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center space-x-1"
+                      >
+                        <Download className="w-3 h-3" />
+                        <span>View</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* MODAL: SINGLE TABLE QR PREVIEW & DOWNLOAD */}
+        {selectedTableQR && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[var(--card-bg)] border border-[var(--border-color)] p-6 rounded-3xl max-w-sm w-full space-y-5 shadow-2xl animate-fade-in text-center">
+              <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-3">
+                <h3 className="font-extrabold text-[var(--text-main)] text-base font-display">
+                  Table {selectedTableQR.tableId} QR Stand Card
+                </h3>
+                <button onClick={() => setSelectedTableQR(null)} className="text-[var(--text-muted)] hover:text-[var(--text-main)] font-bold">✕</button>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl inline-block shadow-md border border-slate-200">
+                <img
+                  src={selectedTableQR.qrDataUrl}
+                  alt={`Table ${selectedTableQR.tableId} QR`}
+                  className="w-56 h-56 object-contain rounded-lg mx-auto"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-xs font-black text-indigo-400 uppercase tracking-wide block">
+                  🍽️ SWIPEBITE Canteen System
+                </span>
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  Place this code on physical Table {selectedTableQR.tableId} for customers to order directly.
+                </p>
+                <div className="text-[10px] text-[var(--text-muted)] font-mono bg-[var(--bg-color)] p-2 rounded-xl border border-[var(--border-color)] break-all mt-2">
+                  {selectedTableQR.url}
+                </div>
+              </div>
+
+              <div className="flex space-x-3 pt-2">
+                <a
+                  href={selectedTableQR.qrDataUrl}
+                  download={`swipebite-table-${selectedTableQR.tableId}-qr.png`}
+                  className="flex-1 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] hover:border-indigo-500/30 rounded-xl text-xs font-bold cursor-pointer flex items-center justify-center space-x-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
+                </a>
+                <button
+                  onClick={() => handlePrintQR(selectedTableQR)}
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer flex items-center justify-center space-x-1.5"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Card</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -161,13 +161,18 @@ const updateOrderStatus = async (req, res) => {
       return res.status(404).json({ error: 'Order not found.' });
     }
 
-    // Role specific state transition check
-    if (userRole === 'KITCHEN' && !['PREPARING', 'READY'].includes(status)) {
-      return res.status(403).json({ error: 'Kitchen staff can only mark orders as PREPARING or READY.' });
+    const normalizedRole = (userRole || '').toUpperCase();
+
+    // Role specific state transition check:
+    // ADMIN has full authority over all statuses.
+    // KITCHEN handles PREPARING, READY, COMPLETED.
+    // VENDOR handles PAID, PREPARING, READY, COMPLETED, CANCELLED.
+    if (normalizedRole === 'KITCHEN' && !['PREPARING', 'READY', 'COMPLETED'].includes(status)) {
+      return res.status(403).json({ error: 'Kitchen staff can only mark orders as PREPARING, READY, or COMPLETED.' });
     }
 
-    if (userRole === 'VENDOR' && !['PAID', 'COMPLETED', 'CANCELLED'].includes(status)) {
-      return res.status(403).json({ error: 'Vendors can only mark orders as PAID, COMPLETED, or CANCELLED.' });
+    if (normalizedRole === 'VENDOR' && !['PAID', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'].includes(status)) {
+      return res.status(403).json({ error: 'Vendors can mark orders as PAID, PREPARING, READY, COMPLETED, or CANCELLED.' });
     }
 
     const updatedOrder = await prisma.order.update({

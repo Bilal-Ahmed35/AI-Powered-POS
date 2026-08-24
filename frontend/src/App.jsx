@@ -63,12 +63,11 @@ function App() {
     if (path.startsWith('/admin')) requiredRole = 'ADMIN';
     else if (path.startsWith('/cashier')) requiredRole = 'VENDOR';
     else if (path.startsWith('/kitchen')) requiredRole = 'KITCHEN';
-    else if (path.startsWith('/customer')) requiredRole = 'CUSTOMER';
 
-    if (requiredRole && user.role !== requiredRole && !user.isGuest) {
+    if (requiredRole && user.role !== requiredRole) {
       autoAuthenticateRole(requiredRole);
     }
-  }, [location.pathname]);
+  }, [location.pathname, user.role]);
 
   const autoAuthenticateRole = async (targetRole) => {
     let email = 'customer@pos.com';

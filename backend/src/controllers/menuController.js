@@ -35,7 +35,7 @@ const getItemById = async (req, res) => {
   }
 };
 const createItem = async (req, res) => {
-  const { name, description, price, type, category, stock } = req.body;
+  const { name, description, price, type, category, stock, prepTime, imageUrl, isActive } = req.body;
   if (!name || price === undefined || !category) {
     return res.status(400).json({ error: 'Name, price, and category are required.' });
   }
@@ -44,11 +44,14 @@ const createItem = async (req, res) => {
     const item = await prisma.menuItem.create({
       data: {
         name,
-        description,
+        description: description || null,
         price: parseFloat(price),
         type: type || 'food',
         category,
-        stock: stock ? parseInt(stock) : 0
+        stock: stock !== undefined ? parseInt(stock, 10) : 0,
+        prepTime: prepTime !== undefined ? parseInt(prepTime, 10) : 5,
+        imageUrl: imageUrl || null,
+        isActive: isActive !== undefined ? Boolean(isActive) : true
       }
     });
     broadcastEvent('menu:update', item);
@@ -61,7 +64,7 @@ const createItem = async (req, res) => {
 
 const updateItem = async (req, res) => {
   const { id } = req.params;
-  const { name, description, price, type, category, stock, isActive } = req.body;
+  const { name, description, price, type, category, stock, prepTime, imageUrl, isActive } = req.body;
   try {
     const updateData = {};
     if (name !== undefined) updateData.name = name;
@@ -69,7 +72,9 @@ const updateItem = async (req, res) => {
     if (price !== undefined) updateData.price = parseFloat(price);
     if (type !== undefined) updateData.type = type;
     if (category !== undefined) updateData.category = category;
-    if (stock !== undefined) updateData.stock = parseInt(stock);
+    if (stock !== undefined) updateData.stock = parseInt(stock, 10);
+    if (prepTime !== undefined) updateData.prepTime = parseInt(prepTime, 10);
+    if (imageUrl !== undefined) updateData.imageUrl = imageUrl || null;
     if (isActive !== undefined) updateData.isActive = isActive;
 
     const item = await prisma.menuItem.update({

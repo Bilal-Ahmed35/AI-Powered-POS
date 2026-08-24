@@ -8,7 +8,14 @@ const KitchenDashboard = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [newOrderAlert, setNewOrderAlert] = useState(false);
+  const [, setTick] = useState(0);
   const alertTimerRef = useRef(null);
+
+  // Auto update elapsed timers every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Simple synthesised beep to wow the user for kitchen notifications!
   const playNotificationSound = () => {
@@ -77,7 +84,7 @@ const KitchenDashboard = ({ user, onLogout }) => {
         if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
       };
     }
-  }, []);
+  }, [user]);
 
   const fetchActiveOrders = async () => {
     setLoading(true);
@@ -107,11 +114,18 @@ const KitchenDashboard = ({ user, onLogout }) => {
     }
   };
 
-  const getElapsedTime = (createdAtStr) => {
+  const getElapsedTimeInfo = (createdAtStr) => {
     const created = new Date(createdAtStr);
     const diffMs = new Date() - created;
-    const diffMins = Math.floor(diffMs / 60000);
-    return `${diffMins}m ago`;
+    const diffMins = Math.max(0, Math.floor(diffMs / 60000));
+    
+    if (diffMins >= 15) {
+      return { text: `${diffMins}m ago`, isCritical: true, isUrgent: true, color: 'text-rose-400 border-rose-500/30 bg-rose-500/10' };
+    }
+    if (diffMins >= 8) {
+      return { text: `${diffMins}m ago`, isCritical: false, isUrgent: true, color: 'text-amber-400 border-amber-500/30 bg-amber-500/10' };
+    }
+    return { text: `${diffMins}m ago`, isCritical: false, isUrgent: false, color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' };
   };
 
   // Filter orders by queue columns
@@ -210,40 +224,61 @@ const KitchenDashboard = ({ user, onLogout }) => {
                 <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Paid transactions appear here automatically.</p>
               </div>
             ) : (
-              paidOrders.map((order) => (
-                <div
-                  key={order.id}
-                  className="bg-[var(--card-bg)] border border-[var(--border-color)] hover:border-blue-500/30 rounded-xl p-4.5 space-y-4 hover:shadow-xl transition-all duration-300 animate-fade-in"
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h4 className="font-extrabold text-[var(--text-main)] text-sm font-mono">#000{order.id}</h4>
-                      <span className="text-[10px] text-[var(--text-muted)] font-semibold mt-0.5 block">Placement: {formatTableDisplay(order.tableId)}</span>
-                    </div>
-                    <span className="text-[10px] text-[var(--text-muted)] flex items-center space-x-1 font-mono bg-[var(--bg-color)]/50 px-2 py-0.5 rounded border border-[var(--border-color)]">
-                      <Clock className="w-3 h-3 text-gray-500" />
-                      <span>{getElapsedTime(order.createdAt)}</span>
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)] space-y-2.5">
-                    {order.orderItems?.map((item) => (
-                      <div key={item.id} className="flex justify-between text-xs font-semibold text-[var(--text-main)] items-center">
-                        <span className="truncate max-w-[150px]">{item.menuItem?.name}</span>
-                        <span className="text-amber-400 font-bold bg-amber-500/5 px-2 py-0.5 rounded text-[10px] border border-amber-500/10">× {item.quantity}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={() => handleUpdateStatus(order.id, 'PREPARING')}
-                    className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-650 hover:from-blue-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold transition-all border border-blue-500/20 cursor-pointer flex items-center justify-center space-x-1.5"
+              paidOrders.map((order) => {
+                const elapsed = getElapsedTimeInfo(order.createdAt);
+                return (
+                  <div
+                    key={order.id}
+                    className={`bg-[var(--card-bg)] border rounded-xl p-4.5 space-y-4 hover:shadow-xl transition-all duration-300 animate-fade-in ${
+                      elapsed.isCritical
+                        ? 'border-rose-500/50 shadow-lg shadow-rose-500/10 animate-pulse'
+                        : elapsed.isUrgent
+                        ? 'border-amber-500/30'
+                        : 'border-[var(--border-color)] hover:border-blue-500/30'
+                    }`}
                   >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>Start Preparation</span>
-                  </button>
-                </div>
-              ))
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <h4 className="font-extrabold text-[var(--text-main)] text-sm font-mono">#000{order.id}</h4>
+                          {elapsed.isCritical && (
+                            <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-400 rounded text-[9px] font-black uppercase tracking-wider">
+                              CRITICAL
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-[var(--text-muted)] font-semibold mt-0.5 block">Placement: {formatTableDisplay(order.tableId)}</span>
+                      </div>
+                      <span className={`text-[10px] flex items-center space-x-1 font-mono px-2 py-0.5 rounded border ${elapsed.color}`}>
+                        <Clock className="w-3 h-3" />
+                        <span>{elapsed.text}</span>
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)] space-y-2.5">
+                      {order.orderItems?.map((item) => (
+                        <div key={item.id} className="flex justify-between text-xs font-semibold text-[var(--text-main)] items-center">
+                          <div className="min-w-0 pr-2">
+                            <span className="truncate block">{item.menuItem?.name}</span>
+                            {item.menuItem?.prepTime && (
+                              <span className="text-[9px] text-[var(--text-muted)] font-mono">⏱️ ~{item.menuItem.prepTime}m prep</span>
+                            )}
+                          </div>
+                          <span className="text-amber-400 font-bold bg-amber-500/5 px-2 py-0.5 rounded text-[10px] border border-amber-500/10 shrink-0">× {item.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={() => handleUpdateStatus(order.id, 'PREPARING')}
+                      className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-650 hover:from-blue-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold transition-all border border-blue-500/20 cursor-pointer flex items-center justify-center space-x-1.5 shadow-md"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Start Preparation</span>
+                    </button>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -268,40 +303,59 @@ const KitchenDashboard = ({ user, onLogout }) => {
                 <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Chef click "Start Cooking" to begin orders.</p>
               </div>
             ) : (
-              preparingOrders.map((order) => (
-                <div
-                  key={order.id}
-                  className="bg-[var(--card-bg)] border border-purple-500/15 rounded-xl p-4.5 space-y-4 shadow-[0_0_20px_rgba(168,85,247,0.02)] hover:border-purple-500/35 hover:shadow-[0_0_25px_rgba(168,85,247,0.05)] transition-all duration-300 animate-fade-in"
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h4 className="font-extrabold text-[var(--text-main)] text-sm font-mono">#000{order.id}</h4>
-                      <span className="text-[10px] text-purple-400 font-semibold mt-0.5 block">Placement: {formatTableDisplay(order.tableId)}</span>
-                    </div>
-                    <span className="text-[10px] text-purple-400 flex items-center space-x-1 font-mono bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20 animate-glow-pulse">
-                      <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-ping" />
-                      <span>{getElapsedTime(order.createdAt)}</span>
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)] space-y-2.5">
-                    {order.orderItems?.map((item) => (
-                      <div key={item.id} className="flex justify-between text-xs font-semibold text-[var(--text-main)] items-center">
-                        <span className="truncate max-w-[150px]">{item.menuItem?.name}</span>
-                        <span className="text-purple-400 font-bold bg-purple-500/5 px-2 py-0.5 rounded text-[10px] border border-purple-500/10">× {item.quantity}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={() => handleUpdateStatus(order.id, 'READY')}
-                    className="w-full py-2.5 bg-gradient-to-r from-purple-650 to-indigo-650 hover:from-purple-600 hover:to-indigo-600 text-white rounded-xl text-xs font-bold transition-all border border-purple-500/20 cursor-pointer flex items-center justify-center space-x-1.5"
+              preparingOrders.map((order) => {
+                const elapsed = getElapsedTimeInfo(order.createdAt);
+                return (
+                  <div
+                    key={order.id}
+                    className={`bg-[var(--card-bg)] border rounded-xl p-4.5 space-y-4 shadow-[0_0_20px_rgba(168,85,247,0.02)] transition-all duration-300 animate-fade-in ${
+                      elapsed.isCritical
+                        ? 'border-rose-500/50 shadow-lg shadow-rose-500/10'
+                        : 'border-purple-500/20 hover:border-purple-500/40'
+                    }`}
                   >
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    <span>Complete Cooking</span>
-                  </button>
-                </div>
-              ))
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <h4 className="font-extrabold text-[var(--text-main)] text-sm font-mono">#000{order.id}</h4>
+                          {elapsed.isCritical && (
+                            <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-400 rounded text-[9px] font-black uppercase tracking-wider animate-pulse">
+                              DELAYED
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-purple-400 font-semibold mt-0.5 block">Placement: {formatTableDisplay(order.tableId)}</span>
+                      </div>
+                      <span className={`text-[10px] flex items-center space-x-1 font-mono px-2 py-0.5 rounded border ${elapsed.color}`}>
+                        <span className="w-1.5 h-1.5 bg-current rounded-full animate-ping" />
+                        <span>{elapsed.text}</span>
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)] space-y-2.5">
+                      {order.orderItems?.map((item) => (
+                        <div key={item.id} className="flex justify-between text-xs font-semibold text-[var(--text-main)] items-center">
+                          <div className="min-w-0 pr-2">
+                            <span className="truncate block">{item.menuItem?.name}</span>
+                            {item.menuItem?.prepTime && (
+                              <span className="text-[9px] text-[var(--text-muted)] font-mono">⏱️ ~{item.menuItem.prepTime}m prep</span>
+                            )}
+                          </div>
+                          <span className="text-purple-400 font-bold bg-purple-500/5 px-2 py-0.5 rounded text-[10px] border border-purple-500/10 shrink-0">× {item.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={() => handleUpdateStatus(order.id, 'READY')}
+                      className="w-full py-2.5 bg-gradient-to-r from-purple-650 to-indigo-650 hover:from-purple-600 hover:to-indigo-600 text-white rounded-xl text-xs font-bold transition-all border border-purple-500/20 cursor-pointer flex items-center justify-center space-x-1.5 shadow-md"
+                    >
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>Complete Cooking</span>
+                    </button>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -329,13 +383,17 @@ const KitchenDashboard = ({ user, onLogout }) => {
               readyOrders.map((order) => (
                 <div
                   key={order.id}
-                  className="bg-[var(--card-bg)] border border-emerald-500/15 rounded-xl p-4.5 space-y-3 shadow-[0_0_20px_rgba(16,185,129,0.01)] hover:border-emerald-500/35 hover:shadow-[0_0_25px_rgba(16,185,129,0.05)] transition-all duration-300 animate-fade-in"
+                  className="bg-[var(--card-bg)] border border-emerald-500/20 rounded-xl p-4.5 space-y-3 shadow-[0_0_20px_rgba(16,185,129,0.01)] hover:border-emerald-500/35 hover:shadow-[0_0_25px_rgba(16,185,129,0.05)] transition-all duration-300 animate-fade-in"
                 >
                   <div className="flex justify-between items-start">
                     <div>
                       <h4 className="font-extrabold text-[var(--text-main)] text-sm font-mono">#000{order.id}</h4>
                       <span className="text-[10px] text-emerald-400 font-semibold mt-0.5 block">Placement: {formatTableDisplay(order.tableId)}</span>
                     </div>
+                    <span className="text-[10px] text-emerald-400 flex items-center space-x-1 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      <CheckCircle className="w-3 h-3" />
+                      <span>Ready</span>
+                    </span>
                   </div>
 
                   <div className="p-3 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)] space-y-2">
@@ -348,7 +406,7 @@ const KitchenDashboard = ({ user, onLogout }) => {
                   </div>
 
                   <div className="p-2.5 bg-emerald-500/5 border border-emerald-500/10 text-emerald-400 text-center rounded-lg text-[9px] font-extrabold uppercase tracking-wide">
-                    Waiting for cashier handoff
+                    Waiting for customer pickup
                   </div>
                 </div>
               ))
