@@ -7215,3 +7215,603 @@ HTML CONTENT PREVIEW:
   
 
 ================================================================================
+
+================================================================================
+DATE/TIME: 8/25/2026, 1:59:28 PM
+TO: admin@pos.com
+SUBJECT: Order Confirmed - SwipeBite POS #61
+TEXT CONTENT:
+Hi System Admin,
+
+Thank you for your order! Your order has been placed successfully.
+
+Order ID: #00061
+Date & Time: 8/25/2026, 1:59:27 PM
+Estimated Prep Time: 19 minutes (Kitchen Load: Medium)
+Details: Kitchen load is Medium with 6 active orders during peak dining hours. Base preparation time is 8 minutes adjusted by AI for active queue delays.
+
+Bill Breakdown:
+- Paratha Ordinary x 3 @ $50.00 = $150.00
+
+Total Amount: $150.00
+Payment Status: PENDING_VERIFICATION
+
+We are preparing your order! You can track its live status in your dashboard.
+
+Sincerely,
+SwipeBite Canteen Team
+HTML CONTENT PREVIEW:
+
+    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+      <div style="background-color: #6366f1; padding: 20px; text-align: center; color: white;">
+        <h2 style="margin: 0; font-size: 24px; font-weight: bold;">Order Confirmed!</h2>
+        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Thank you for ordering with SwipeBite</p>
+      </div>
+      <div style="padding: 25px;">
+        <p style="font-size: 16px; margin-top: 0;">Hi <strong>System Admin</strong>,</p>
+        <p style="font-size: 14px; line-height: 1.5; color: #555;">Your order has been placed successfully. Below is your detailed receipt:</p>
+        
+        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #f0f0f0;">
+          <table style="width: 100%; font-size: 13px;">
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Order ID:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">#00061</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Date & Time:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">8/25/2026, 1:59:27 PM</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Estimated Prep Time:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; color: #6366f1; font-weight: bold;">19 minutes</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Kitchen Load:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">Medium</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Status Details:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; font-style: italic; color: #666;">Kitchen load is Medium with 6 active orders during peak dining hours. Base preparation time is 8 minutes adjusted by AI for active queue delays.</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Payment Method:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; font-weight: bold;">JazzCash</td>
+            </tr>
+            <tr>
+              <td style="color: #666;"><strong>Payment Status:</strong></td>
+              <td style="text-align: right; font-weight: bold;">PENDING_VERIFICATION</td>
+            </tr>
+          </table>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
+          <thead>
+            <tr style="background-color: #f3f4f6;">
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: left;">Item</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: center;">Qty</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Price</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">Paratha Ordinary</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">3</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$50.00</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$150.00</td>
+      </tr>
+    
+          </tbody>
+        </table>
+
+        <div style="text-align: right; font-size: 15px; margin-bottom: 25px;">
+          <strong>Total Amount:</strong> <span style="font-size: 18px; color: #6366f1; font-weight: bold; margin-left: 10px;">$150.00</span>
+        </div>
+
+        <p style="font-size: 14px; line-height: 1.5; color: #555;">Payment method used: <strong>JazzCash</strong>. We have started processing your order, and it will be sent to the kitchen for preparation.</p>
+        
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
+        <p style="font-size: 12px; color: #888; text-align: center; margin: 0;">This is an automated receipt from SwipeBite Canteen POS System.</p>
+      </div>
+    </div>
+  
+
+================================================================================
+
+================================================================================
+DATE/TIME: 8/25/2026, 1:59:58 PM
+TO: admin@pos.com
+SUBJECT: Order Ready for Pickup! - SwipeBite POS #61
+TEXT CONTENT:
+Hi System Admin,
+
+Your order has been successfully prepared and is ready for pickup!
+
+Order ID: #00061
+Date & Time: 8/25/2026, 1:59:27 PM
+ETA Update: Ready for Pickup
+Payment Status: VERIFIED
+
+Bill Breakdown:
+- Paratha Ordinary x 3 @ $50.00 = $150.00
+
+Total Amount: $150.00
+
+Please collect your order from the pickup counter. We hope you enjoy your meal!
+
+Sincerely,
+SwipeBite Canteen Team
+HTML CONTENT PREVIEW:
+
+    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+      <div style="background-color: #10b981; padding: 20px; text-align: center; color: white;">
+        <h2 style="margin: 0; font-size: 24px; font-weight: bold;">Order Ready!</h2>
+        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Your meal is ready for collection</p>
+      </div>
+      <div style="padding: 25px;">
+        <p style="font-size: 16px; margin-top: 0;">Hi <strong>System Admin</strong>,</p>
+        <p style="font-size: 14px; line-height: 1.5; color: #555;">Great news! Your order is ready for pickup at the counter. Here are the details:</p>
+        
+        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #f0f0f0;">
+          <table style="width: 100%; font-size: 13px;">
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Order ID:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">#00061</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Date & Time:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">8/25/2026, 1:59:27 PM</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>ETA Update:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; color: #10b981; font-weight: bold;">Ready for Pickup</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Payment Method:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; font-weight: bold;">JazzCash</td>
+            </tr>
+            <tr>
+              <td style="color: #666;"><strong>Payment Status:</strong></td>
+              <td style="text-align: right; font-weight: bold;">VERIFIED</td>
+            </tr>
+          </table>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
+          <thead>
+            <tr style="background-color: #f3f4f6;">
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: left;">Item</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: center;">Qty</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Price</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">Paratha Ordinary</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">3</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$50.00</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$150.00</td>
+      </tr>
+    
+          </tbody>
+        </table>
+
+        <div style="text-align: right; font-size: 15px; margin-bottom: 25px;">
+          <strong>Total Amount:</strong> <span style="font-size: 18px; color: #10b981; font-weight: bold; margin-left: 10px;">$150.00</span>
+        </div>
+
+        <p style="font-size: 14px; line-height: 1.5; color: #555; text-align: center; padding: 10px; background-color: #ecfdf5; border-radius: 8px; color: #065f46; font-weight: bold;">
+          Enjoy your meal! 🍔🍕☕
+        </p>
+        
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
+        <p style="font-size: 12px; color: #888; text-align: center; margin: 0;">This is an automated receipt from SwipeBite Canteen POS System.</p>
+      </div>
+    </div>
+  
+
+================================================================================
+
+================================================================================
+DATE/TIME: 8/25/2026, 2:00:04 PM
+TO: admin@pos.com
+SUBJECT: Order Completed & Handed Over - SwipeBite POS #61
+TEXT CONTENT:
+Hi System Admin,
+
+Your order has been completed and handed over to you!
+
+Order ID: #00061
+Date & Time: 8/25/2026, 1:59:27 PM
+Payment Status: VERIFIED
+
+Bill Breakdown:
+- Paratha Ordinary x 3 @ $50.00 = $150.00
+
+Total Amount: $150.00
+
+Thank you for dining with SwipeBite!
+
+Sincerely,
+SwipeBite Canteen Team
+HTML CONTENT PREVIEW:
+
+    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+      <div style="background-color: #6b7280; padding: 20px; text-align: center; color: white;">
+        <h2 style="margin: 0; font-size: 24px; font-weight: bold;">Order Completed</h2>
+        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Thank you for dining with SwipeBite</p>
+      </div>
+      <div style="padding: 25px;">
+        <p style="font-size: 16px; margin-top: 0;">Hi <strong>System Admin</strong>,</p>
+        <p style="font-size: 14px; line-height: 1.5; color: #555;">Your order has been completed and successfully handed over to you at the counter. Here are the details:</p>
+        
+        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #f0f0f0;">
+          <table style="width: 100%; font-size: 13px;">
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Order ID:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">#00061</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Date & Time:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">8/25/2026, 1:59:27 PM</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Payment Method:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; font-weight: bold;">JazzCash</td>
+            </tr>
+            <tr>
+              <td style="color: #666;"><strong>Payment Status:</strong></td>
+              <td style="text-align: right; font-weight: bold;">VERIFIED</td>
+            </tr>
+          </table>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
+          <thead>
+            <tr style="background-color: #f3f4f6;">
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: left;">Item</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: center;">Qty</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Price</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">Paratha Ordinary</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">3</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$50.00</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$150.00</td>
+      </tr>
+    
+          </tbody>
+        </table>
+
+        <div style="text-align: right; font-size: 15px; margin-bottom: 25px;">
+          <strong>Total Amount Paid:</strong> <span style="font-size: 18px; color: #1f2937; font-weight: bold; margin-left: 10px;">$150.00</span>
+        </div>
+
+        <p style="font-size: 14px; line-height: 1.5; color: #555; text-align: center;">We hope to serve you again soon!</p>
+        
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
+        <p style="font-size: 12px; color: #888; text-align: center; margin: 0;">This is an automated receipt from SwipeBite Canteen POS System.</p>
+      </div>
+    </div>
+  
+
+================================================================================
+
+================================================================================
+DATE/TIME: 8/25/2026, 2:09:45 PM
+TO: admin@pos.com
+SUBJECT: Order Confirmed - SwipeBite POS #62
+TEXT CONTENT:
+Hi System Admin,
+
+Thank you for your order! Your order has been placed successfully.
+
+Order ID: #00062
+Date & Time: 8/25/2026, 2:09:44 PM
+Estimated Prep Time: 27 minutes (Kitchen Load: Medium)
+Details: Kitchen load is Medium with 6 active orders during standard hours. Base preparation time is 20 minutes adjusted by AI for active queue delays.
+
+Bill Breakdown:
+- Zinger Burger x 1 @ $290.00 = $290.00
+- Zinger Burger Cheese x 1 @ $345.00 = $345.00
+
+Total Amount: $635.00
+Payment Status: UNPAID
+
+We are preparing your order! You can track its live status in your dashboard.
+
+Sincerely,
+SwipeBite Canteen Team
+HTML CONTENT PREVIEW:
+
+    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+      <div style="background-color: #6366f1; padding: 20px; text-align: center; color: white;">
+        <h2 style="margin: 0; font-size: 24px; font-weight: bold;">Order Confirmed!</h2>
+        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Thank you for ordering with SwipeBite</p>
+      </div>
+      <div style="padding: 25px;">
+        <p style="font-size: 16px; margin-top: 0;">Hi <strong>System Admin</strong>,</p>
+        <p style="font-size: 14px; line-height: 1.5; color: #555;">Your order has been placed successfully. Below is your detailed receipt:</p>
+        
+        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #f0f0f0;">
+          <table style="width: 100%; font-size: 13px;">
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Order ID:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">#00062</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Date & Time:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">8/25/2026, 2:09:44 PM</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Estimated Prep Time:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; color: #6366f1; font-weight: bold;">27 minutes</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Kitchen Load:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">Medium</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Status Details:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; font-style: italic; color: #666;">Kitchen load is Medium with 6 active orders during standard hours. Base preparation time is 20 minutes adjusted by AI for active queue delays.</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Payment Method:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; font-weight: bold;">Pay Cash</td>
+            </tr>
+            <tr>
+              <td style="color: #666;"><strong>Payment Status:</strong></td>
+              <td style="text-align: right; font-weight: bold;">UNPAID</td>
+            </tr>
+          </table>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
+          <thead>
+            <tr style="background-color: #f3f4f6;">
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: left;">Item</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: center;">Qty</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Price</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">Zinger Burger</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">1</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$290.00</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$290.00</td>
+      </tr>
+    
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">Zinger Burger Cheese</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">1</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$345.00</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$345.00</td>
+      </tr>
+    
+          </tbody>
+        </table>
+
+        <div style="text-align: right; font-size: 15px; margin-bottom: 25px;">
+          <strong>Total Amount:</strong> <span style="font-size: 18px; color: #6366f1; font-weight: bold; margin-left: 10px;">$635.00</span>
+        </div>
+
+        <p style="font-size: 14px; line-height: 1.5; color: #555;">Payment method used: <strong>COD</strong>. We have started processing your order, and it will be sent to the kitchen for preparation.</p>
+        
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
+        <p style="font-size: 12px; color: #888; text-align: center; margin: 0;">This is an automated receipt from SwipeBite Canteen POS System.</p>
+      </div>
+    </div>
+  
+
+================================================================================
+
+================================================================================
+DATE/TIME: 8/25/2026, 2:10:38 PM
+TO: admin@pos.com
+SUBJECT: Order Ready for Pickup! - SwipeBite POS #62
+TEXT CONTENT:
+Hi System Admin,
+
+Your order has been successfully prepared and is ready for pickup!
+
+Order ID: #00062
+Date & Time: 8/25/2026, 2:09:44 PM
+ETA Update: Ready for Pickup
+Payment Status: VERIFIED
+
+Bill Breakdown:
+- Zinger Burger x 1 @ $290.00 = $290.00
+- Zinger Burger Cheese x 1 @ $345.00 = $345.00
+
+Total Amount: $635.00
+
+Please collect your order from the pickup counter. We hope you enjoy your meal!
+
+Sincerely,
+SwipeBite Canteen Team
+HTML CONTENT PREVIEW:
+
+    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+      <div style="background-color: #10b981; padding: 20px; text-align: center; color: white;">
+        <h2 style="margin: 0; font-size: 24px; font-weight: bold;">Order Ready!</h2>
+        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Your meal is ready for collection</p>
+      </div>
+      <div style="padding: 25px;">
+        <p style="font-size: 16px; margin-top: 0;">Hi <strong>System Admin</strong>,</p>
+        <p style="font-size: 14px; line-height: 1.5; color: #555;">Great news! Your order is ready for pickup at the counter. Here are the details:</p>
+        
+        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #f0f0f0;">
+          <table style="width: 100%; font-size: 13px;">
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Order ID:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">#00062</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Date & Time:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">8/25/2026, 2:09:44 PM</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>ETA Update:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; color: #10b981; font-weight: bold;">Ready for Pickup</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Payment Method:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; font-weight: bold;">Pay Cash</td>
+            </tr>
+            <tr>
+              <td style="color: #666;"><strong>Payment Status:</strong></td>
+              <td style="text-align: right; font-weight: bold;">VERIFIED</td>
+            </tr>
+          </table>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
+          <thead>
+            <tr style="background-color: #f3f4f6;">
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: left;">Item</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: center;">Qty</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Price</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">Zinger Burger</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">1</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$290.00</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$290.00</td>
+      </tr>
+    
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">Zinger Burger Cheese</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">1</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$345.00</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$345.00</td>
+      </tr>
+    
+          </tbody>
+        </table>
+
+        <div style="text-align: right; font-size: 15px; margin-bottom: 25px;">
+          <strong>Total Amount:</strong> <span style="font-size: 18px; color: #10b981; font-weight: bold; margin-left: 10px;">$635.00</span>
+        </div>
+
+        <p style="font-size: 14px; line-height: 1.5; color: #555; text-align: center; padding: 10px; background-color: #ecfdf5; border-radius: 8px; color: #065f46; font-weight: bold;">
+          Enjoy your meal! 🍔🍕☕
+        </p>
+        
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
+        <p style="font-size: 12px; color: #888; text-align: center; margin: 0;">This is an automated receipt from SwipeBite Canteen POS System.</p>
+      </div>
+    </div>
+  
+
+================================================================================
+
+================================================================================
+DATE/TIME: 8/25/2026, 2:12:00 PM
+TO: admin@pos.com
+SUBJECT: Order Completed & Handed Over - SwipeBite POS #62
+TEXT CONTENT:
+Hi System Admin,
+
+Your order has been completed and handed over to you!
+
+Order ID: #00062
+Date & Time: 8/25/2026, 2:09:44 PM
+Payment Status: VERIFIED
+
+Bill Breakdown:
+- Zinger Burger x 1 @ $290.00 = $290.00
+- Zinger Burger Cheese x 1 @ $345.00 = $345.00
+
+Total Amount: $635.00
+
+Thank you for dining with SwipeBite!
+
+Sincerely,
+SwipeBite Canteen Team
+HTML CONTENT PREVIEW:
+
+    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+      <div style="background-color: #6b7280; padding: 20px; text-align: center; color: white;">
+        <h2 style="margin: 0; font-size: 24px; font-weight: bold;">Order Completed</h2>
+        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Thank you for dining with SwipeBite</p>
+      </div>
+      <div style="padding: 25px;">
+        <p style="font-size: 16px; margin-top: 0;">Hi <strong>System Admin</strong>,</p>
+        <p style="font-size: 14px; line-height: 1.5; color: #555;">Your order has been completed and successfully handed over to you at the counter. Here are the details:</p>
+        
+        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #f0f0f0;">
+          <table style="width: 100%; font-size: 13px;">
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Order ID:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">#00062</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Date & Time:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px;">8/25/2026, 2:09:44 PM</td>
+            </tr>
+            <tr>
+              <td style="color: #666; padding-bottom: 5px;"><strong>Payment Method:</strong></td>
+              <td style="text-align: right; padding-bottom: 5px; font-weight: bold;">Pay Cash</td>
+            </tr>
+            <tr>
+              <td style="color: #666;"><strong>Payment Status:</strong></td>
+              <td style="text-align: right; font-weight: bold;">VERIFIED</td>
+            </tr>
+          </table>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
+          <thead>
+            <tr style="background-color: #f3f4f6;">
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: left;">Item</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: center;">Qty</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Price</th>
+              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">Zinger Burger</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">1</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$290.00</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$290.00</td>
+      </tr>
+    
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">Zinger Burger Cheese</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">1</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$345.00</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$345.00</td>
+      </tr>
+    
+          </tbody>
+        </table>
+
+        <div style="text-align: right; font-size: 15px; margin-bottom: 25px;">
+          <strong>Total Amount Paid:</strong> <span style="font-size: 18px; color: #1f2937; font-weight: bold; margin-left: 10px;">$635.00</span>
+        </div>
+
+        <p style="font-size: 14px; line-height: 1.5; color: #555; text-align: center;">We hope to serve you again soon!</p>
+        
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
+        <p style="font-size: 12px; color: #888; text-align: center; margin: 0;">This is an automated receipt from SwipeBite Canteen POS System.</p>
+      </div>
+    </div>
+  
+
+================================================================================
