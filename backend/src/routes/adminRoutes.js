@@ -1,14 +1,13 @@
 const express = require('express');
 const {
   getDashboardStats,
+  getAuditLogs,
   getStaffList,
   createStaff,
   updateStaff,
-  updateStaffPassword,
   toggleStaffStatus,
-  getAdminOrders,
-  generateTableQR,
-  generateBatchQRs
+  getBranches,
+  createBranch,
 } = require('../controllers/adminController');
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
@@ -16,21 +15,20 @@ const roleMiddleware = require('../middleware/roleMiddleware');
 const router = express.Router();
 
 router.use(authMiddleware);
-router.use(roleMiddleware(['ADMIN'])); // Restricted to ADMIN role only
+router.use(roleMiddleware(['ADMIN']));
 
-// Stats & Order Search
+// Dashboard Analytics & Logs
 router.get('/stats', getDashboardStats);
-router.get('/orders', getAdminOrders);
+router.get('/audit-logs', getAuditLogs);
 
-// QR Code Generation
-router.get('/qr/batch', generateBatchQRs);
-router.get('/qr/:tableId', generateTableQR);
-
-// Staff Management
+// Staff Account Management
 router.get('/staff', getStaffList);
 router.post('/staff', createStaff);
 router.put('/staff/:id', updateStaff);
-router.put('/staff/:id/password', updateStaffPassword);
 router.put('/staff/:id/status', toggleStaffStatus);
+
+// Branch Management
+router.get('/branches', getBranches);
+router.post('/branches', createBranch);
 
 module.exports = router;

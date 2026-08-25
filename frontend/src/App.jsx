@@ -3,10 +3,11 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import StaffLogin from './components/StaffLogin';
 import CustomerPortalPage from './pages/customer/CustomerPortalPage';
 import CustomerCartPage from './pages/customer/CustomerCartPage';
+import OrderTrackingPage from './pages/customer/OrderTrackingPage';
 import CashierPOSPage from './pages/cashier/CashierPOSPage';
 import KitchenBoardPage from './pages/kitchen/KitchenBoardPage';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
-import api from './services/api';
+import api, { setActiveAuthTokens } from './services/api';
 import { connectSocket, disconnectSocket } from './services/socket';
 import { Sun, Moon, LogIn } from 'lucide-react';
 
@@ -17,8 +18,23 @@ function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('user');
-    const savedToken = localStorage.getItem('token');
+    const path = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
+    let roleKey = '';
+    if (path.startsWith('/admin')) roleKey = 'admin_';
+    else if (path.startsWith('/cashier')) roleKey = 'vendor_';
+    else if (path.startsWith('/kitchen')) roleKey = 'kitchen_';
+    else if (path.startsWith('/customer')) roleKey = 'customer_';
+
+    const savedUser =
+      (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('user')) ||
+      (typeof localStorage !== 'undefined' && localStorage.getItem(`${roleKey}user`)) ||
+      (typeof localStorage !== 'undefined' && localStorage.getItem('user'));
+
+    const savedToken =
+      (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('token')) ||
+      (typeof localStorage !== 'undefined' && localStorage.getItem(`${roleKey}token`)) ||
+      (typeof localStorage !== 'undefined' && localStorage.getItem('token'));
+
     if (savedUser && savedToken) {
       try {
         return JSON.parse(savedUser);
@@ -40,17 +56,8 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    const savedToken = localStorage.getItem('token');
-    
-    if (savedUser && savedToken) {
-      try {
-        const parsedUser = JSON.parse(savedUser);
-        connectSocket(parsedUser);
-      } catch (err) {
-        console.error('Error parsing saved session:', err);
-        handleLogout();
-      }
+    if (user && user.id) {
+      connectSocket(user);
     } else {
       connectSocket({ id: 0, role: 'CUSTOMER', name: 'Guest Customer', email: '', isGuest: true });
     }
@@ -71,15 +78,21 @@ function App() {
 
   const autoAuthenticateRole = async (targetRole) => {
     let email = 'customer@pos.com';
-    if (targetRole === 'ADMIN') email = 'admin@pos.com';
-    else if (targetRole === 'VENDOR') email = 'vendor@pos.com';
-    else if (targetRole === 'KITCHEN') email = 'kitchen@pos.com';
+    let prefix = 'customer';
+    if (targetRole === 'ADMIN') { email = 'admin@pos.com'; prefix = 'admin'; }
+    else if (targetRole === 'VENDOR') { email = 'vendor@pos.com'; prefix = 'vendor'; }
+    else if (targetRole === 'KITCHEN') { email = 'kitchen@pos.com'; prefix = 'kitchen'; }
 
     try {
       const response = await api.post('/auth/login', { email, password: 'password123' });
-      const { user: loggedInUser, accessToken } = response.data;
-      localStorage.setItem('token', accessToken);
+      const { user: loggedInUser, accessToken, refreshToken } = response.data;
+      setActiveAuthTokens(accessToken, refreshToken);
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('user', JSON.stringify(loggedInUser));
+      }
+      localStorage.setItem(`${prefix}_user`, JSON.stringify(loggedInUser));
       localStorage.setItem('user', JSON.stringify(loggedInUser));
+
       setUser(loggedInUser);
       connectSocket(loggedInUser);
     } catch (err) {
@@ -90,11 +103,20 @@ function App() {
     }
   };
 
-  const handleLoginSuccess = (loggedInUser) => {
+  const handleLoginSuccess = (loggedInUser, tokens) => {
+    const rolePrefix = loggedInUser.role?.toLowerCase() || 'user';
+    if (tokens?.accessToken) {
+      setActiveAuthTokens(tokens.accessToken, tokens.refreshToken);
+    }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('user', JSON.stringify(loggedInUser));
+    }
+    localStorage.setItem(`${rolePrefix}_user`, JSON.stringify(loggedInUser));
+    localStorage.setItem('user', JSON.stringify(loggedInUser));
+
     setUser(loggedInUser);
     connectSocket(loggedInUser);
     
-    // Direct user to corresponding dashboard route upon login
     if (loggedInUser.role === 'ADMIN') navigate('/admin');
     else if (loggedInUser.role === 'VENDOR') navigate('/cashier');
     else if (loggedInUser.role === 'KITCHEN') navigate('/kitchen');
@@ -102,12 +124,28 @@ function App() {
   };
 
   const handleLogout = () => {
-    // Clear authorization data
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.clear();
+    }
     localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
-    // Clear simulated/persisted local application state keys
+    localStorage.removeItem('vendor_token');
+    localStorage.removeItem('vendor_refreshToken');
+    localStorage.removeItem('vendor_user');
+    localStorage.removeItem('kitchen_token');
+    localStorage.removeItem('kitchen_refreshToken');
+    localStorage.removeItem('kitchen_user');
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_refreshToken');
+    localStorage.removeItem('admin_user');
+    localStorage.removeItem('customer_token');
+    localStorage.removeItem('customer_refreshToken');
+    localStorage.removeItem('customer_user');
     localStorage.removeItem('customer_cart');
+    localStorage.removeItem('customer_sessionId');
     localStorage.removeItem('customer_tableId');
+    localStorage.removeItem('customer_tableToken');
     localStorage.removeItem('customer_category');
     localStorage.removeItem('customer_checkoutStep');
     localStorage.removeItem('customer_paymentMethod');
@@ -121,7 +159,7 @@ function App() {
     navigate('/login');
   };
 
-  // Determine if we are on a customer-facing route (no top system navbar needed)
+  // Determine if we are on a customer-facing route
   const isCustomerRoute = location.pathname.startsWith('/customer');
 
   return (
@@ -136,24 +174,26 @@ function App() {
             </span>
           </div>
 
-          {/* Active user details, Theme Toggle & Login/Logout button */}
           <div className="flex items-center space-x-4 text-xs">
-            <span className="text-[var(--text-muted)]">
-              Account: <strong className="text-[var(--text-main)] font-semibold">{user.name}</strong>
-            </span>
-            
+            <div className="flex items-center space-x-2">
+              <span className="font-semibold text-[var(--text-main)]">{user.name}</span>
+              <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 text-[10px] font-bold uppercase border border-indigo-500/20">
+                {user.role}
+              </span>
+            </div>
+
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              className="p-2 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] hover:text-indigo-500 rounded-xl transition-all cursor-pointer flex items-center justify-center shadow-sm"
-              title="Toggle theme (Light/Dark)"
+              className="p-1.5 rounded-lg bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors cursor-pointer"
+              title="Toggle Theme"
             >
-              {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {user.isGuest ? (
+            {user.role === 'CUSTOMER' ? (
               <button
                 onClick={() => navigate('/login')}
-                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold transition-all cursor-pointer shadow-sm flex items-center space-x-1.5"
+                className="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg font-bold transition-all shadow-md shadow-indigo-600/20 cursor-pointer"
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span>Staff Login</span>
@@ -161,27 +201,40 @@ function App() {
             ) : (
               <button
                 onClick={handleLogout}
-                className="px-3 py-1.5 bg-gradient-to-r from-red-650 to-rose-655 hover:from-red-600 hover:to-rose-600 text-white rounded-lg font-bold transition-all cursor-pointer shadow-sm shadow-red-950/10 border border-red-500/10"
+                className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-3 py-1.5 rounded-lg font-bold transition-colors cursor-pointer"
               >
-                Log Out
+                Logout
               </button>
             )}
           </div>
         </div>
       )}
 
-      {/* Main workspace frame with independent routes */}
-      <div className={`flex-1 w-full flex flex-col ${isCustomerRoute ? '' : 'max-w-7xl mx-auto px-4 md:px-6 justify-center'}`}>
+      {/* Main Routing Layout */}
+      <div className="flex-1">
         <Routes>
           <Route path="/" element={<Navigate to="/customer" replace />} />
-          <Route path="/login" element={<StaffLogin onLoginSuccess={handleLoginSuccess} />} />
           <Route path="/customer" element={<CustomerPortalPage user={user} onLogout={handleLogout} />} />
           <Route path="/customer/table/:tableId" element={<CustomerPortalPage user={user} onLogout={handleLogout} />} />
           <Route path="/customer/cart" element={<CustomerCartPage user={user} onLogout={handleLogout} />} />
-          <Route path="/cashier" element={<CashierPOSPage user={user} onLogout={handleLogout} />} />
-          <Route path="/kitchen" element={<KitchenBoardPage user={user} onLogout={handleLogout} />} />
-          <Route path="/admin" element={<AdminDashboardPage user={user} onLogout={handleLogout} />} />
-          <Route path="*" element={<Navigate to="/customer" replace />} />
+          <Route path="/customer/track/:trackingToken" element={<OrderTrackingPage user={user} onLogout={handleLogout} />} />
+          <Route path="/login" element={<StaffLogin onLoginSuccess={handleLoginSuccess} />} />
+
+          {/* Role-Protected Staff Dashboards */}
+          <Route
+            path="/admin/*"
+            element={user.role === 'ADMIN' ? <AdminDashboardPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
+          />
+          <Route
+            path="/cashier/*"
+            element={user.role === 'VENDOR' ? <CashierPOSPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
+          />
+          <Route
+            path="/kitchen/*"
+            element={user.role === 'KITCHEN' ? <KitchenBoardPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
+          />
+
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </div>

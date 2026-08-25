@@ -23,19 +23,16 @@ const StaffLogin = ({ onLoginSuccess }) => {
     setLoading(true);
     try {
       const response = await api.post('/auth/login', { email, password });
-      const { user, accessToken } = response.data;
+      const { user, accessToken, refreshToken } = response.data;
 
-      localStorage.setItem('token', accessToken);
-      localStorage.setItem('user', JSON.stringify(user));
-
-      connectSocket(user);
-      if (onLoginSuccess) onLoginSuccess(user);
-
-      // Redirect based on staff role
-      if (user.role === 'ADMIN') navigate('/admin');
-      else if (user.role === 'VENDOR') navigate('/cashier');
-      else if (user.role === 'KITCHEN') navigate('/kitchen');
-      else navigate('/customer');
+      if (onLoginSuccess) {
+        onLoginSuccess(user, { accessToken, refreshToken });
+      } else {
+        if (user.role === 'ADMIN') navigate('/admin');
+        else if (user.role === 'VENDOR') navigate('/cashier');
+        else if (user.role === 'KITCHEN') navigate('/kitchen');
+        else navigate('/customer');
+      }
     } catch (err) {
       console.error('Login error:', err);
       setError(err.response?.data?.error || 'Invalid credentials or connection error.');

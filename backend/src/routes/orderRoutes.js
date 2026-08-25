@@ -3,14 +3,19 @@ const {
   createOrder,
   updateOrderStatus,
   getAllOrders,
-  getOrderById
+  getOrderById,
+  getOrderByTrackingToken,
 } = require('../controllers/orderController');
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
 
 const router = express.Router();
 
-router.use(authMiddleware); // All order routes require login
+// Public Order Tracking via Dynamic QR token
+router.get('/track/:token', getOrderByTrackingToken);
+
+// Protected Order Management Endpoints
+router.use(authMiddleware);
 
 router.post('/', createOrder);
 router.get('/', getAllOrders);

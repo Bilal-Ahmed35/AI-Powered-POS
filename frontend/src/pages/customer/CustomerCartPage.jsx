@@ -20,6 +20,8 @@ import {
   ChevronRight,
   Smartphone,
   Lock,
+  QrCode,
+  Sparkles,
 } from 'lucide-react';
 
 const CustomerCartPage = ({ user }) => {
@@ -42,6 +44,7 @@ const CustomerCartPage = ({ user }) => {
   });
 
   const [tableId] = useState(() => localStorage.getItem('customer_tableId') || 'Table 4');
+  const [sessionId] = useState(() => localStorage.getItem('customer_sessionId') || '');
   const [error, setError] = useState('');
 
   // ─── ETA / Kitchen Load ───────────────────────────────────────────────────
@@ -145,14 +148,23 @@ const CustomerCartPage = ({ user }) => {
   }, []);
 
   // ─── Cart helpers ─────────────────────────────────────────────────────────
-  const addToCart = item => {
+  const addToCart = async (item) => {
     setCart(prev => ({
       ...prev,
       [item.id]: { ...item, quantity: (prev[item.id]?.quantity || 0) + 1 },
     }));
+
+    if (sessionId) {
+      try {
+        await api.post(`/cart/${sessionId}/items`, { menuItemId: item.id, quantity: 1 });
+      } catch (e) {
+        console.warn('Backend cart error:', e.message);
+      }
+    }
   };
 
-  const removeOneFromCart = itemId => {
+  const removeOneFromCart = async (itemId) => {
+    const currentQty = cart[itemId]?.quantity || 0;
     setCart(prev => {
       const copy = { ...prev };
       if (!copy[itemId]) return prev;
@@ -163,26 +175,53 @@ const CustomerCartPage = ({ user }) => {
       }
       return copy;
     });
+
+    if (sessionId) {
+      try {
+        if (currentQty <= 1) {
+          await api.delete(`/cart/${sessionId}/items/${itemId}`);
+        } else {
+          await api.put(`/cart/${sessionId}/items/${itemId}`, { quantity: currentQty - 1 });
+        }
+      } catch (e) {
+        console.warn('Backend cart error:', e.message);
+      }
+    }
   };
 
-  const deleteFromCart = itemId => {
+  const deleteFromCart = async (itemId) => {
     setCart(prev => {
       const copy = { ...prev };
       delete copy[itemId];
       return copy;
     });
+
+    if (sessionId) {
+      try {
+        await api.delete(`/cart/${sessionId}/items/${itemId}`);
+      } catch (e) {
+        console.warn('Backend cart delete error:', e.message);
+      }
+    }
   };
 
-  const clearCart = () => setCart({});
+  const clearCart = async () => {
+    setCart({});
+    if (sessionId) {
+      try {
+        await api.delete(`/cart/${sessionId}`);
+      } catch (e) {
+        console.warn('Backend cart clear error:', e.message);
+      }
+    }
+  };
 
   const getSubtotal = () =>
     Object.values(cart).reduce((t, item) => t + item.price * item.quantity, 0);
 
   const getTotal = () => getSubtotal().toFixed(2);
-
   const totalQty = Object.values(cart).reduce((s, i) => s + i.quantity, 0);
 
-  // ─── Image helper (same logic as menu page) ───────────────────────────────
   const getItemImage = item => {
     const name = (item.name || '').toLowerCase();
     const cat = (item.category || '').toLowerCase();
@@ -200,12 +239,12 @@ const CustomerCartPage = ({ user }) => {
       return 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?w=400&auto=format&fit=crop&q=80';
     if (name.includes('tea') || name.includes('chai') || name.includes('coffee') || name.includes('coke') || name.includes('drink') || cat.includes('beverage'))
       return 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=400&auto=format&fit=crop&q=80';
-    if (name.includes('naan') || name.includes('bread') || name.includes('roti'))
+    if (name.includes('naan') || name.includes('bread') || name.includes('roti') || name.includes('paratha') || name.includes('chapati'))
       return 'https://images.unsplash.com/photo-1626074353765-517a681e40be?w=400&auto=format&fit=crop&q=80';
     return 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&auto=format&fit=crop&q=80';
   };
 
-  // ─── OTP handlers ─────────────────────────────────────────────────────────
+  // ─── Persistent OTP Handlers ─────────────────────────────────────────────
   const handleSendOTP = async () => {
     if (!guestEmail || !guestName) {
       setError('Please enter your name and email first.');
@@ -214,7 +253,11 @@ const CustomerCartPage = ({ user }) => {
     setError('');
     setOtpLoading(true);
     try {
-      const response = await api.post('/auth/send-otp', { email: guestEmail, name: guestName });
+      const response = await api.post('/auth/send-otp', {
+        email: guestEmail,
+        name: guestName,
+        sessionId,
+      });
       if (response.data.success) {
         setOtpSent(true);
         setCooldown(30);
@@ -238,11 +281,25 @@ const CustomerCartPage = ({ user }) => {
         email: guestEmail,
         name: guestName,
         otp: otpCode,
+        sessionId,
       });
       if (response.data.success) {
         setOtpVerified(true);
-        if (response.data.accessToken) localStorage.setItem('token', response.data.accessToken);
+        if (response.data.accessToken) {
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('token', response.data.accessToken);
+            if (response.data.refreshToken) sessionStorage.setItem('refreshToken', response.data.refreshToken);
+          }
+          localStorage.setItem('customer_token', response.data.accessToken);
+          if (response.data.refreshToken) localStorage.setItem('customer_refreshToken', response.data.refreshToken);
+          localStorage.setItem('token', response.data.accessToken);
+          if (response.data.refreshToken) localStorage.setItem('refreshToken', response.data.refreshToken);
+        }
         if (response.data.user) {
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('user', JSON.stringify(response.data.user));
+          }
+          localStorage.setItem('customer_user', JSON.stringify(response.data.user));
           localStorage.setItem('user', JSON.stringify(response.data.user));
           connectSocket(response.data.user);
         }
@@ -272,10 +329,11 @@ const CustomerCartPage = ({ user }) => {
       const response = await api.post('/orders', {
         items,
         tableId,
+        sessionId,
         paymentMethod: overrideMethod || paymentMethod,
         paymentStatus: isOnline ? 'PENDING_VERIFICATION' : 'UNPAID',
         paymentTxId: overrideTxId || null,
-        status: 'PENDING',
+        status: isOnline ? 'PAYMENT_PENDING' : 'PENDING',
         customerEmail: guestEmail || user?.email,
         emailVerified: true,
       });
@@ -284,7 +342,6 @@ const CustomerCartPage = ({ user }) => {
       clearCart();
       setShowOnlinePaymentModal(false);
       setCheckoutDone(true);
-      localStorage.setItem('customer_checkoutStep', 'tracking');
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.error || 'Failed to place order. Please check stock levels.');
@@ -300,629 +357,458 @@ const CustomerCartPage = ({ user }) => {
       setError('Please verify your email via OTP before placing an order.');
       return;
     }
-    if (paymentMethod !== 'COD') {
+    if (paymentMethod === 'Easypaisa' || paymentMethod === 'JazzCash') {
       setShowOnlinePaymentModal(true);
-    } else {
-      executeOrderPlacement('COD', null);
+      return;
     }
+    await executeOrderPlacement('COD', null);
   };
 
-  const handleAuthorizeOnlineWallet = (e) => {
-    e.preventDefault();
-    if (!walletPhone) return;
+  const handleWalletPaymentConfirm = async () => {
     setAuthorizingPayment(true);
-    
-    // Simulate brief payment network authorization (1.2s)
-    setTimeout(() => {
-      const prefix = walletProvider === 'Easypaisa' ? 'EP' : walletProvider === 'JazzCash' ? 'JC' : 'NP';
-      const randomNum = Math.floor(100000 + Math.random() * 900000);
-      const simulatedTx = `${prefix}-${randomNum}`;
-      executeOrderPlacement(walletProvider, simulatedTx);
-    }, 1200);
+    setTimeout(async () => {
+      const mockTxId = `TXN-${Date.now().toString().slice(-6)}-${Math.floor(1000 + Math.random() * 9000)}`;
+      await executeOrderPlacement(walletProvider, mockTxId);
+    }, 1500);
   };
 
-  // ─── Order status helper ──────────────────────────────────────────────────
-  const getStatusStepIndex = status => {
-    const steps = ['PENDING', 'PAID', 'PREPARING', 'READY', 'COMPLETED'];
-    return steps.indexOf(status);
-  };
-
-  // ════════════════════════════════════════════════════════════════════════════
-  // RENDER – Order Tracking view after successful placement
-  // ════════════════════════════════════════════════════════════════════════════
+  // ─── If checkout is completed, render confirmation and track button ──────
   if (checkoutDone && activeOrder) {
     return (
-      <div className="w-full bg-[#FFFFFF] text-[#17172B] min-h-screen font-sans flex flex-col">
-        {/* Header */}
-        <header className="w-full bg-white border-b border-[#E8E8F0] sticky top-0 z-40 px-4 sm:px-8 py-3.5 flex items-center space-x-4 shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#5B3DF5] to-[#7C4DFF] flex items-center justify-center text-white shadow-md">
-            <Utensils className="w-5 h-5" />
+      <div className="w-full bg-[#FFFFFF] min-h-screen font-sans flex flex-col items-center justify-center p-4 sm:p-6">
+        <div className="max-w-md w-full bg-white border border-[#E8E8F0] rounded-[32px] p-8 shadow-2xl text-center space-y-6 animate-in fade-in zoom-in duration-300">
+          <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto ring-8 ring-emerald-50">
+            <CheckCircle2 className="w-10 h-10" />
           </div>
+
           <div>
-            <h1 className="font-extrabold text-base tracking-tight text-[#17172B] leading-none">SWIPEBITE</h1>
-            <span className="text-[9px] font-bold text-[#62627A] tracking-wider uppercase">Order Tracking</span>
+            <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest block mb-1">
+              Order Confirmed
+            </span>
+            <h1 className="text-2xl font-black text-gray-900">
+              {activeOrder.orderNumber || `#000${activeOrder.id}`}
+            </h1>
+            <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+              Your order has been placed successfully for <strong className="text-gray-800">{activeOrder.tableNumber || tableId}</strong>.
+              A receipt has been sent to <strong className="text-indigo-600">{activeOrder.customerEmail || guestEmail}</strong>.
+            </p>
           </div>
-        </header>
 
-        <main className="flex-1 max-w-xl w-full mx-auto p-4 sm:p-8">
-          <div className="bg-white border border-[#E8E8F0] p-8 rounded-3xl shadow-xl space-y-6 mt-4">
-            <div className="flex justify-between items-start border-b border-[#E8E8F0] pb-4">
-              <div>
-                <span className="text-[10px] text-[#62627A] font-mono tracking-wider uppercase block">LIVE ORDER TRACKING</span>
-                <h2 className="text-xl font-black text-[#17172B]">Order #000{activeOrder.id}</h2>
-                <span className="text-xs text-[#5B3DF5] font-bold block mt-0.5">{activeOrder.tableId || tableId}</span>
-              </div>
-              <span className="px-3 py-1 bg-[#F3EFFF] text-[#5B3DF5] border border-[#5B3DF5]/20 text-xs font-extrabold rounded-xl font-mono">
-                Rs. {activeOrder.total?.toFixed(2)}
-              </span>
+          <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 text-xs space-y-2">
+            <div className="flex justify-between text-gray-600">
+              <span>Estimated Prep Time:</span>
+              <strong className="text-emerald-600 font-bold">~{activeOrder.etaPrediction?.adjustedEta ? Math.round(activeOrder.etaPrediction.adjustedEta) : 10} Mins</strong>
             </div>
-
-            {/* Progress bar */}
-            <div className="space-y-3">
-              <div className="flex justify-between text-xs font-bold text-[#17172B]">
-                <span>Status: <strong className="text-[#5B3DF5] uppercase">{activeOrder.status}</strong></span>
-                <span>{getStatusStepIndex(activeOrder.status) + 1} of 5 Steps</span>
-              </div>
-              <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden flex">
-                {['PENDING', 'PAID', 'PREPARING', 'READY', 'COMPLETED'].map((st, idx) => (
-                  <div
-                    key={st}
-                    className={`h-full flex-1 border-r last:border-0 border-white transition-all duration-500 ${
-                      idx <= getStatusStepIndex(activeOrder.status) ? 'bg-[#5B3DF5]' : 'bg-gray-200'
-                    }`}
-                  />
-                ))}
-              </div>
-              <div className="flex justify-between text-[9px] text-[#62627A] font-mono mt-1">
-                {['Pending', 'Paid', 'Preparing', 'Ready', 'Done'].map(s => (
-                  <span key={s}>{s}</span>
-                ))}
-              </div>
+            <div className="flex justify-between text-gray-600">
+              <span>Payment:</span>
+              <strong className="text-gray-800">{activeOrder.paymentMethod} ({activeOrder.paymentStatus})</strong>
             </div>
-
-            {/* Status messages */}
-            {['PENDING', 'PAID'].includes(activeOrder.status) && (
-              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-xs font-semibold flex items-center space-x-2">
-                <Clock className="w-4 h-4 shrink-0" />
-                <span>Your order is confirmed and waiting to be prepared. Sit tight! 🍽️</span>
-              </div>
-            )}
-            {activeOrder.status === 'PREPARING' && (
-              <div className="p-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-xs font-semibold flex items-center space-x-2">
-                <RotateCcw className="w-4 h-4 shrink-0 animate-spin" />
-                <span>Your food is being prepared right now. Won't be long!</span>
-              </div>
-            )}
-            {activeOrder.status === 'READY' && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold flex items-center space-x-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>🎉 Your order is READY! Please collect it from the counter.</span>
-              </div>
-            )}
-
-            {/* Receipt */}
-            <div className="p-4 bg-[#F3EFFF]/50 border border-[#5B3DF5]/15 rounded-2xl space-y-3 text-xs font-mono">
-              <div className="border-b border-[#5B3DF5]/15 pb-2 text-center">
-                <strong className="text-[#17172B] font-bold block text-sm">AI-POWERED POS RECEIPT</strong>
-                <span className="text-[10px] text-[#62627A]">Customer: {activeOrder.customerEmail || guestEmail}</span>
-              </div>
-              <div className="space-y-1">
-                {activeOrder.orderItems?.map(oi => (
-                  <div key={oi.id} className="flex justify-between text-[#17172B]">
-                    <span>{oi.menuItem?.name} × {oi.quantity}</span>
-                    <span>Rs. {(oi.price * oi.quantity).toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="border-t border-[#5B3DF5]/15 pt-2 flex justify-between text-[#17172B] font-bold">
-                <span>Total:</span>
-                <span className="text-[#5B3DF5]">Rs. {activeOrder.total?.toFixed(2)}</span>
-              </div>
+            <div className="flex justify-between text-gray-900 font-black border-t border-gray-200 pt-2">
+              <span>Total Amount:</span>
+              <span className="text-indigo-600">Rs. {activeOrder.total.toFixed(2)}</span>
             </div>
+          </div>
 
+          <div className="space-y-3 pt-2">
+            <button
+              onClick={() => navigate(`/customer/track/${activeOrder.trackingToken || activeOrder.id}`)}
+              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-2xl shadow-lg transition-all cursor-pointer flex items-center justify-center space-x-2"
+            >
+              <QrCode className="w-4 h-4" />
+              <span>Track Live Order & View QR</span>
+            </button>
             <button
               onClick={() => navigate('/customer')}
-              className="w-full py-3 bg-[#5B3DF5] hover:bg-[#4F46E5] text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
+              className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-2xl transition-all cursor-pointer"
             >
-              ← Return to Menu
+              Back to Menu
             </button>
           </div>
-        </main>
+        </div>
       </div>
     );
   }
 
   // ════════════════════════════════════════════════════════════════════════════
-  // RENDER – Cart Page
-  // ════════════════════════════════════════════════════════════════════════════
   return (
     <div className="w-full bg-[#FFFFFF] text-[#17172B] min-h-screen font-sans flex flex-col">
-
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header className="w-full bg-white border-b border-[#E8E8F0] sticky top-0 z-40 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-[0_2px_10px_rgba(0,0,0,0.02)]">
-        <div className="flex items-center space-x-4">
+      {/* HEADER */}
+      <header className="w-full bg-white border-b border-[#E8E8F0] sticky top-0 z-40 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
+        <div className="flex items-center space-x-3">
           <button
             onClick={() => navigate('/customer')}
-            className="p-2 bg-[#F3EFFF] text-[#5B3DF5] hover:bg-[#5B3DF5] hover:text-white rounded-xl transition-all cursor-pointer border border-[#5B3DF5]/20"
+            className="p-2 hover:bg-[#F3EFFF] text-[#5B3DF5] rounded-xl transition-all cursor-pointer border border-[#5B3DF5]/20"
             title="Back to Menu"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#5B3DF5] to-[#7C4DFF] flex items-center justify-center text-white shadow-md">
-              <Utensils className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="font-extrabold text-base tracking-tight text-[#17172B] leading-none">SWIPEBITE</h1>
-              <span className="text-[9px] font-bold text-[#62627A] tracking-wider uppercase">Your Cart</span>
-            </div>
+          <div>
+            <h1 className="font-black text-base text-[#17172B]">Your Shopping Cart</h1>
+            <span className="text-[10px] text-[#62627A] font-bold">{tableId} • {totalQty} items</span>
           </div>
-          <div className="h-6 w-[1px] bg-[#E8E8F0] hidden sm:block" />
-          <span className="font-black text-sm text-[#17172B]">{tableId}</span>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <div className="hidden md:flex flex-col text-right">
-            <span className="text-xs font-bold text-[#17172B]">Hi, {guestName || user?.name || 'Customer'}</span>
-            <span className="text-[10px] text-[#62627A] font-mono">{guestEmail || user?.email || ''}</span>
-          </div>
-          <div className="relative p-2.5 bg-[#F3EFFF] text-[#5B3DF5] rounded-xl border border-[#5B3DF5]/20">
-            <ShoppingBag className="w-5 h-5" />
-            {totalQty > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#5B3DF5] border-2 border-white text-white rounded-full text-[10px] font-black flex items-center justify-center">
-                {totalQty}
-              </span>
-            )}
-          </div>
-        </div>
+        {totalQty > 0 && (
+          <button
+            onClick={clearCart}
+            className="px-3 py-1.5 text-red-500 hover:bg-red-50 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center space-x-1 border border-red-100"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Clear Cart</span>
+          </button>
+        )}
       </header>
 
-      {/* ── Main content ───────────────────────────────────────────────────── */}
-      <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-
-        {/* Error banner */}
+      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        {/* Error Alert */}
         {error && (
-          <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-600 rounded-2xl text-xs font-semibold flex items-center space-x-2.5">
+          <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl text-xs font-bold flex items-center space-x-2.5 shadow-sm">
             <AlertCircle className="w-5 h-5 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Page title */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-black text-[#17172B] flex items-center space-x-2">
-            <ShoppingBag className="w-5 h-5 text-[#5B3DF5]" />
-            <span>Your Cart ({totalQty} {totalQty === 1 ? 'item' : 'items'})</span>
-          </h2>
-          {totalQty > 0 && (
-            <button
-              onClick={clearCart}
-              className="text-xs font-bold text-red-500 hover:text-red-600 transition-colors cursor-pointer"
-            >
-              Clear All
-            </button>
-          )}
-        </div>
-
-        {/* ── Empty cart state ─────────────────────────────────────────────── */}
         {totalQty === 0 ? (
-          <div className="py-24 text-center bg-white border border-[#E8E8F0] rounded-3xl space-y-4">
-            <span className="text-5xl block">🛒</span>
-            <p className="font-bold text-base text-[#17172B]">Your cart is empty</p>
-            <p className="text-xs text-[#62627A]">Browse the menu and add delicious items.</p>
+          <div className="bg-white border border-[#E8E8F0] rounded-[32px] p-12 text-center space-y-4 max-w-md mx-auto shadow-sm">
+            <div className="w-16 h-16 bg-[#F3EFFF] text-[#5B3DF5] rounded-full flex items-center justify-center mx-auto">
+              <ShoppingBag className="w-8 h-8" />
+            </div>
+            <h2 className="text-lg font-black text-gray-900">Your Cart is Empty</h2>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Explore our fresh delicious canteen menu and add items to get started.
+            </p>
             <button
               onClick={() => navigate('/customer')}
-              className="mt-2 px-6 py-3 bg-[#5B3DF5] text-white rounded-xl text-xs font-bold hover:bg-[#4F46E5] transition-all shadow-md cursor-pointer inline-flex items-center space-x-2"
+              className="px-6 py-3 bg-[#5B3DF5] text-white font-bold text-xs rounded-2xl shadow-md hover:bg-indigo-600 transition-all cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Browse Menu</span>
+              Browse Menu
             </button>
           </div>
         ) : (
-          <div className="grid lg:grid-cols-5 gap-6 items-start">
-
-            {/* ── LEFT: Items + ETA ──────────────────────────────────────── */}
-            <div className="lg:col-span-3 space-y-4">
-
-              {/* Cart items list */}
-              <div className="bg-white border border-[#E8E8F0] rounded-3xl shadow-sm overflow-hidden">
-                <div className="divide-y divide-[#E8E8F0]">
-                  {Object.values(cart).map(item => (
-                    <div key={item.id} className="p-4 flex items-center space-x-4">
+          <div className="grid lg:grid-cols-12 gap-8">
+            {/* Left: Cart Items List */}
+            <div className="lg:col-span-7 space-y-4">
+              <h2 className="text-xs font-black text-gray-400 uppercase tracking-wider">Selected Items ({totalQty})</h2>
+              
+              <div className="space-y-3">
+                {Object.values(cart).map((item) => (
+                  <div
+                    key={item.id}
+                    className="bg-white border border-[#E8E8F0] rounded-2xl p-4 flex items-center justify-between gap-4 shadow-sm hover:border-indigo-200 transition-all"
+                  >
+                    <div className="flex items-center space-x-3.5">
                       <img
                         src={getItemImage(item)}
                         alt={item.name}
-                        className="w-16 h-16 rounded-2xl object-cover shrink-0"
+                        className="w-16 h-16 rounded-xl object-cover border border-gray-100 shrink-0"
                       />
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-sm text-[#17172B] truncate">{item.name}</h3>
-                        <span className="text-xs text-[#62627A] font-mono">Rs. {item.price} each</span>
-                        <div className="mt-2 flex items-center space-x-2">
-                          <div className="flex items-center bg-[#F3EFFF] border border-[#5B3DF5]/20 p-1 rounded-xl">
-                            <button
-                              onClick={() => removeOneFromCart(item.id)}
-                              className="w-6 h-6 rounded-lg bg-white border border-[#E8E8F0] text-[#17172B] hover:bg-red-500 hover:text-white flex items-center justify-center font-bold text-xs cursor-pointer transition-all"
-                            >
-                              −
-                            </button>
-                            <span className="text-xs text-[#5B3DF5] font-black px-3 min-w-8 text-center font-mono">
-                              {item.quantity}
-                            </span>
-                            <button
-                              onClick={() => addToCart(item)}
-                              disabled={item.stock <= item.quantity}
-                              className="w-6 h-6 rounded-lg bg-[#5B3DF5] text-white flex items-center justify-center font-bold text-xs cursor-pointer transition-all disabled:opacity-40"
-                            >
-                              +
-                            </button>
-                          </div>
-                          <button
-                            onClick={() => deleteFromCart(item.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
-                            title="Remove item"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <span className="font-black font-mono text-[#17172B]">
-                          Rs. {(item.price * item.quantity).toFixed(2)}
+                      <div>
+                        <h3 className="font-black text-xs text-gray-900 line-clamp-1">{item.name}</h3>
+                        <span className="text-[11px] font-bold text-indigo-600 mt-0.5 block">
+                          Rs. {item.price.toFixed(2)} each
                         </span>
+                        <span className="text-[10px] text-gray-400">Subtotal: Rs. {(item.price * item.quantity).toFixed(2)}</span>
                       </div>
                     </div>
-                  ))}
-                </div>
+
+                    <div className="flex items-center space-x-2">
+                      <div className="flex items-center bg-gray-50 border border-gray-200 rounded-xl p-1">
+                        <button
+                          onClick={() => removeOneFromCart(item.id)}
+                          className="w-7 h-7 bg-white text-gray-700 font-bold rounded-lg flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer shadow-sm text-xs"
+                        >
+                          -
+                        </button>
+                        <span className="text-xs font-black text-gray-900 px-2.5">{item.quantity}</span>
+                        <button
+                          onClick={() => addToCart(item)}
+                          className="w-7 h-7 bg-indigo-600 text-white font-bold rounded-lg flex items-center justify-center hover:bg-indigo-500 transition-all cursor-pointer shadow-sm text-xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => deleteFromCart(item.id)}
+                        className="p-2 text-gray-400 hover:text-red-500 transition-all cursor-pointer"
+                        title="Remove Item"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
 
-              {/* ETA & Kitchen Load */}
-              <div className="bg-white border border-[#E8E8F0] rounded-3xl shadow-sm p-5 space-y-4">
-                <h3 className="font-bold text-sm text-[#17172B] flex items-center space-x-2">
-                  <Bot className="w-4 h-4 text-[#5B3DF5]" />
-                  <span>AI Kitchen Estimates</span>
-                  {etaLoading && <span className="text-[10px] text-[#62627A] font-mono">(updating...)</span>}
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-[#F3EFFF] border border-[#5B3DF5]/20 rounded-2xl flex items-center space-x-3">
-                    <Clock className="w-5 h-5 text-amber-500 shrink-0" />
-                    <div>
-                      <span className="text-[9px] text-[#62627A] font-mono uppercase block leading-none">Est. Delivery</span>
-                      <strong className="text-sm font-black font-mono text-[#17172B] mt-0.5 block">
-                        {etaInfo
-                          ? `${Math.round(etaInfo.adjustedEta || 8)}–${Math.round((etaInfo.adjustedEta || 8) + 3)} min`
-                          : '— min'}
-                      </strong>
+              {/* AI ETA Card */}
+              {etaInfo && (
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Bot className="w-4 h-4 text-indigo-600" />
+                      <span className="text-xs font-black text-indigo-900">AI Kitchen Prep Forecast</span>
                     </div>
+                    <span className="text-xs font-black text-emerald-600 bg-emerald-100/80 px-2.5 py-1 rounded-full">
+                      ~{etaInfo.estimatedTime} Mins
+                    </span>
                   </div>
-                  <div className="p-4 bg-[#F3EFFF] border border-[#5B3DF5]/20 rounded-2xl flex items-center space-x-3">
-                    <Bot className="w-5 h-5 text-emerald-500 shrink-0" />
-                    <div>
-                      <span className="text-[9px] text-[#62627A] font-mono uppercase block leading-none">Kitchen Load</span>
-                      <strong className={`text-sm font-black font-mono mt-0.5 block ${
-                        etaInfo?.kitchenLoad === 'High' ? 'text-red-500' :
-                        etaInfo?.kitchenLoad === 'Medium' ? 'text-amber-500' : 'text-emerald-600'
-                      }`}>
-                        {etaInfo?.kitchenLoad || '—'}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-                {etaInfo?.kitchenLoad === 'High' && (
-                  <p className="text-[11px] text-amber-600 font-semibold bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                    ⚠️ Kitchen is currently busy. Your order may take a bit longer than usual.
+                  <p className="text-[11px] text-indigo-700 leading-relaxed">
+                    {etaInfo.explanation || `Estimated ~${etaInfo.estimatedTime} mins based on current kitchen load (${etaInfo.kitchenLoad}) and peak-hour queue analysis.`}
                   </p>
-                )}
-              </div>
-
-              {/* Back to menu link */}
-              <button
-                onClick={() => navigate('/customer')}
-                className="text-xs font-bold text-[#5B3DF5] hover:underline cursor-pointer flex items-center space-x-1"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Add more items</span>
-              </button>
+                </div>
+              )}
             </div>
 
-            {/* ── RIGHT: OTP + Payment + Order summary ───────────────────── */}
-            <div className="lg:col-span-2 space-y-4">
-
-              {/* Order Summary */}
-              <div className="bg-white border border-[#E8E8F0] rounded-3xl shadow-sm p-5 space-y-3">
-                <h3 className="font-bold text-sm text-[#17172B]">Order Summary</h3>
-                <div className="space-y-2 text-xs">
-                  {Object.values(cart).map(item => (
-                    <div key={item.id} className="flex justify-between text-[#62627A]">
-                      <span>{item.name} × {item.quantity}</span>
-                      <span className="font-mono">Rs. {(item.price * item.quantity).toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="border-t border-[#E8E8F0] pt-3 flex justify-between items-center">
-                  <span className="font-bold text-sm text-[#17172B]">Grand Total</span>
-                  <strong className="text-base font-black font-mono text-[#5B3DF5]">Rs. {getTotal()}</strong>
-                </div>
-                <div className="text-[10px] text-[#62627A] flex items-center space-x-1">
-                  <Shield className="w-3 h-3 text-emerald-500" />
-                  <span>No hidden charges • Prices are inclusive of all taxes</span>
-                </div>
-              </div>
-
-              {/* OTP Verification */}
-              <div className={`bg-white border rounded-3xl shadow-sm p-5 space-y-4 ${otpVerified ? 'border-emerald-200' : 'border-[#E8E8F0]'}`}>
+            {/* Right: Checkout & Verification Panel */}
+            <div className="lg:col-span-5 space-y-6">
+              
+              {/* Customer Verification Card */}
+              <div className="bg-white border border-[#E8E8F0] rounded-3xl p-6 shadow-sm space-y-5">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-sm text-[#17172B]">Email Verification</h3>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-gray-400">Customer Details</h3>
                   {otpVerified && (
-                    <span className="flex items-center space-x-1 text-emerald-600 text-xs font-bold">
-                      <CheckCircle2 className="w-4 h-4" />
+                    <span className="text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center space-x-1">
+                      <Check className="w-3 h-3" />
                       <span>Verified</span>
                     </span>
                   )}
                 </div>
 
-                {otpVerified ? (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-semibold flex items-center space-x-2">
-                    <Check className="w-4 h-4 shrink-0" />
-                    <span>Email verified successfully! You can now select a payment method below.</span>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-[11px] text-[#62627A]">
-                      Verify your email to unlock payment methods and place your order.
-                    </p>
-
-                    {/* Name field */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-[#17172B]">Full Name</label>
+                {!otpVerified ? (
+                  <div className="space-y-3.5">
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-600 block mb-1">Your Full Name</label>
                       <input
                         type="text"
                         value={guestName}
-                        onChange={e => setGuestName(e.target.value)}
-                        placeholder="e.g. John Doe"
-                        className="w-full bg-white border border-[#E8E8F0] rounded-xl px-3 py-2.5 text-xs text-[#17172B] focus:outline-none focus:border-[#5B3DF5] transition-all"
+                        onChange={(e) => setGuestName(e.target.value)}
+                        placeholder="John Doe"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 focus:outline-none focus:border-indigo-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-600 block mb-1">Email (for receipts & updates)</label>
+                      <input
+                        type="email"
+                        value={guestEmail}
+                        onChange={(e) => setGuestEmail(e.target.value)}
+                        placeholder="john@example.com"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 focus:outline-none focus:border-indigo-600"
                       />
                     </div>
 
-                    {/* Email + Send OTP */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-[#17172B]">Email Address</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="email"
-                          value={guestEmail}
-                          onChange={e => setGuestEmail(e.target.value)}
-                          placeholder="you@email.com"
-                          disabled={otpSent}
-                          className="flex-1 bg-white border border-[#E8E8F0] rounded-xl px-3 py-2.5 text-xs text-[#17172B] focus:outline-none focus:border-[#5B3DF5] disabled:bg-gray-50 transition-all"
-                        />
-                        <button
-                          onClick={handleSendOTP}
-                          disabled={otpLoading || cooldown > 0}
-                          className="px-3 py-2.5 bg-[#5B3DF5] text-white rounded-xl text-xs font-bold hover:bg-[#4F46E5] disabled:opacity-50 cursor-pointer whitespace-nowrap"
-                        >
-                          {otpLoading ? 'Sending…' : cooldown > 0 ? `${cooldown}s` : otpSent ? 'Resend' : 'Send OTP'}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* OTP code input */}
-                    {otpSent && (
-                      <div className="space-y-1">
-                        <label className="text-xs font-bold text-[#17172B]">Enter OTP Code</label>
+                    {!otpSent ? (
+                      <button
+                        onClick={handleSendOTP}
+                        disabled={otpLoading || !guestEmail || !guestName}
+                        className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm flex items-center justify-center space-x-1.5"
+                      >
+                        {otpLoading ? <RotateCcw className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+                        <span>Send 6-Digit Verification Code</span>
+                      </button>
+                    ) : (
+                      <div className="space-y-2 pt-1">
                         <div className="flex gap-2">
                           <input
                             type="text"
-                            maxLength={6}
                             value={otpCode}
-                            onChange={e => setOtpCode(e.target.value)}
-                            placeholder="6-digit code"
-                            className="flex-1 bg-white border border-[#E8E8F0] rounded-xl px-3 py-2.5 text-center text-sm tracking-widest font-mono text-[#17172B] focus:outline-none focus:border-[#5B3DF5]"
+                            onChange={(e) => setOtpCode(e.target.value)}
+                            placeholder="Enter 6-digit code"
+                            maxLength={6}
+                            className="flex-1 bg-gray-50 border border-indigo-300 rounded-xl px-3.5 py-2.5 text-xs text-center font-mono font-bold tracking-widest text-indigo-900 focus:outline-none"
                           />
                           <button
                             onClick={handleVerifyOTP}
-                            disabled={otpLoading}
-                            className="px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold disabled:opacity-50 cursor-pointer"
+                            disabled={otpLoading || otpCode.length < 4}
+                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm"
                           >
-                            {otpLoading ? 'Checking…' : 'Verify'}
+                            {otpLoading ? 'Verifying...' : 'Verify'}
+                          </button>
+                        </div>
+                        <div className="text-right">
+                          <button
+                            onClick={handleSendOTP}
+                            disabled={cooldown > 0 || otpLoading}
+                            className="text-[10px] text-indigo-600 hover:underline font-bold disabled:text-gray-400 cursor-pointer"
+                          >
+                            {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend Code'}
                           </button>
                         </div>
                       </div>
                     )}
                   </div>
+                ) : (
+                  <div className="p-3 bg-emerald-50/70 border border-emerald-100 rounded-xl flex items-center justify-between text-xs">
+                    <div>
+                      <strong className="text-gray-900 font-bold block">{guestName || 'Customer'}</strong>
+                      <span className="text-gray-500 text-[11px]">{guestEmail}</span>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-lg">
+                      Ready to Order
+                    </span>
+                  </div>
                 )}
               </div>
 
-              {/* Payment Method Selection */}
-              <div className={`bg-white border rounded-3xl shadow-sm p-5 space-y-4 transition-all ${!otpVerified ? 'opacity-50 pointer-events-none select-none border-[#E8E8F0]' : 'border-[#5B3DF5]/30'}`}>
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-sm text-[#17172B]">Payment Method</h3>
-                  {!otpVerified && (
-                    <span className="text-[10px] text-amber-600 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
-                      <Shield className="w-3 h-3" />
-                      <span>Verify email to unlock</span>
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  {/* Cash on Delivery */}
+              {/* Payment Method Card */}
+              <div className="bg-white border border-[#E8E8F0] rounded-3xl p-6 shadow-sm space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-gray-400">Payment Option</h3>
+                
+                <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => setPaymentMethod('COD')}
-                    disabled={!otpVerified}
-                    className={`w-full flex items-center space-x-3 p-4 rounded-2xl border-2 transition-all cursor-pointer ${
+                    className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
                       paymentMethod === 'COD'
-                        ? 'border-[#5B3DF5] bg-[#F3EFFF]'
-                        : 'border-[#E8E8F0] bg-white hover:border-[#5B3DF5]/40'
+                        ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-600/10'
+                        : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    <div className={`p-2 rounded-xl ${paymentMethod === 'COD' ? 'bg-[#5B3DF5] text-white' : 'bg-gray-100 text-[#62627A]'}`}>
-                      <Banknote className="w-4 h-4" />
+                    <Banknote className={`w-5 h-5 ${paymentMethod === 'COD' ? 'text-indigo-600' : 'text-gray-400'}`} />
+                    <div className="mt-3">
+                      <strong className="text-xs font-bold block text-gray-900">Pay at Counter</strong>
+                      <span className="text-[10px] text-gray-500">Cash on Delivery</span>
                     </div>
-                    <div className="text-left flex-1">
-                      <p className="text-xs font-bold text-[#17172B]">Cash on Delivery</p>
-                      <p className="text-[10px] text-[#62627A]">Pay in cash when order is ready</p>
-                    </div>
-                    {paymentMethod === 'COD' && <Check className="w-4 h-4 text-[#5B3DF5]" />}
                   </button>
 
-                  {/* Online Payment */}
                   <button
                     onClick={() => setPaymentMethod('Easypaisa')}
-                    disabled={!otpVerified}
-                    className={`w-full flex items-center space-x-3 p-4 rounded-2xl border-2 transition-all cursor-pointer ${
+                    className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
                       paymentMethod === 'Easypaisa'
-                        ? 'border-[#5B3DF5] bg-[#F3EFFF]'
-                        : 'border-[#E8E8F0] bg-white hover:border-[#5B3DF5]/40'
+                        ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-600/10'
+                        : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    <div className={`p-2 rounded-xl ${paymentMethod === 'Easypaisa' ? 'bg-[#5B3DF5] text-white' : 'bg-gray-100 text-[#62627A]'}`}>
-                      <CreditCard className="w-4 h-4" />
+                    <Smartphone className={`w-5 h-5 ${paymentMethod === 'Easypaisa' ? 'text-indigo-600' : 'text-gray-400'}`} />
+                    <div className="mt-3">
+                      <strong className="text-xs font-bold block text-gray-900">Mobile Wallet</strong>
+                      <span className="text-[10px] text-gray-500">Easypaisa / JazzCash</span>
                     </div>
-                    <div className="text-left flex-1">
-                      <p className="text-xs font-bold text-[#17172B]">Online Payment</p>
-                      <p className="text-[10px] text-[#62627A]">Easypaisa / JazzCash / Card</p>
-                    </div>
-                    {paymentMethod === 'Easypaisa' && <Check className="w-4 h-4 text-[#5B3DF5]" />}
                   </button>
                 </div>
               </div>
 
-              {/* Place Order button */}
-              <button
-                onClick={handlePlaceOrder}
-                disabled={!otpVerified || placingOrder || totalQty === 0}
-                className="w-full py-4 bg-[#5B3DF5] hover:bg-[#4F46E5] disabled:bg-gray-200 disabled:text-gray-400 disabled:pointer-events-none text-white font-extrabold text-sm rounded-2xl transition-all shadow-lg shadow-[#5B3DF5]/20 cursor-pointer flex items-center justify-center space-x-2"
-              >
-                {placingOrder ? (
-                  <span>Placing Order…</span>
-                ) : (
-                  <>
-                    <span>Place Order · Rs. {getTotal()}</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+              {/* Order Summary & Placement Button */}
+              <div className="bg-white border border-[#E8E8F0] rounded-3xl p-6 shadow-sm space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-gray-400">Order Summary</h3>
+                
+                <div className="space-y-2 text-xs text-gray-600">
+                  <div className="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span>Rs. {getTotal()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Service / GST:</span>
+                    <span>Rs. 0.00</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-black text-gray-900 border-t border-gray-100 pt-3">
+                    <span>Grand Total:</span>
+                    <span className="text-indigo-600 text-base">Rs. {getTotal()}</span>
+                  </div>
+                </div>
 
-              {!otpVerified && (
-                <p className="text-center text-[11px] text-[#62627A]">
-                  🔒 Verify your email to enable the Place Order button.
-                </p>
-              )}
-
-              <div className="flex items-center justify-center space-x-1.5 text-[10px] text-[#62627A]">
-                <Shield className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Secured checkout • Your data is safe with us</span>
+                <button
+                  onClick={handlePlaceOrder}
+                  disabled={placingOrder}
+                  className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-extrabold text-xs rounded-2xl shadow-xl shadow-indigo-600/20 transition-all cursor-pointer flex items-center justify-center space-x-2"
+                >
+                  {placingOrder ? (
+                    <>
+                      <RotateCcw className="w-4 h-4 animate-spin" />
+                      <span>Placing Order...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Confirm &amp; Place Order</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
               </div>
+
             </div>
           </div>
         )}
       </main>
 
-      {/* Online Mobile Wallet Payment Modal */}
+      {/* Online Wallet Payment Modal */}
       {showOnlinePaymentModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex justify-center items-center p-4 z-50 animate-fade-in">
-          <div className="bg-white border border-[#E8E8F0] rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
-            <div className="flex justify-between items-center border-b border-[#E8E8F0] pb-3">
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-xl bg-[#5B3DF5]/10 text-[#5B3DF5] flex items-center justify-center">
-                  <CreditCard className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm text-[#17172B]">Mobile Wallet Payment</h3>
-                  <span className="text-[10px] text-[#62627A]">Instant Digital Authorization</span>
-                </div>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-gray-100 space-y-5 animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-4">
+              <div>
+                <h3 className="text-base font-black text-gray-900">Mobile Wallet Payment</h3>
+                <span className="text-[10px] text-gray-400">Fast &amp; Instant Authorization</span>
               </div>
               <button
                 onClick={() => setShowOnlinePaymentModal(false)}
-                disabled={authorizingPayment}
-                className="text-[#62627A] hover:text-[#17172B] font-bold p-1"
+                className="text-gray-400 hover:text-gray-600 font-bold"
               >
                 ✕
               </button>
             </div>
 
-            {/* Provider Selector */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-[#17172B]">Choose Mobile Wallet</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'Easypaisa', label: 'Easypaisa', color: 'border-emerald-500 bg-emerald-50 text-emerald-700' },
-                  { id: 'JazzCash', label: 'JazzCash', color: 'border-amber-500 bg-amber-50 text-amber-700' },
-                  { id: 'Nayapay', label: 'Nayapay / Raast', color: 'border-purple-500 bg-purple-50 text-purple-700' },
-                ].map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setWalletProvider(p.id)}
-                    className={`p-3 rounded-2xl border-2 text-xs font-bold text-center transition-all cursor-pointer ${
-                      walletProvider === p.id
-                        ? `${p.color} shadow-sm`
-                        : 'border-[#E8E8F0] text-[#62627A] hover:border-gray-300'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setWalletProvider('Easypaisa')}
+                  className={`py-3 px-4 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    walletProvider === 'Easypaisa'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-600/20'
+                      : 'border-gray-200 text-gray-600'
+                  }`}
+                >
+                  Easypaisa
+                </button>
+                <button
+                  onClick={() => setWalletProvider('JazzCash')}
+                  className={`py-3 px-4 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    walletProvider === 'JazzCash'
+                      ? 'border-red-600 bg-red-50 text-red-700 ring-2 ring-red-600/20'
+                      : 'border-gray-200 text-gray-600'
+                  }`}
+                >
+                  JazzCash
+                </button>
               </div>
-            </div>
 
-            {/* Amount Summary */}
-            <div className="p-3.5 bg-[#F3EFFF] border border-[#5B3DF5]/20 rounded-2xl flex justify-between items-center">
               <div>
-                <span className="text-[10px] text-[#62627A] font-bold uppercase block">Amount Payable</span>
-                <span className="text-xs text-[#5B3DF5] font-semibold">{tableId} • {guestEmail || user?.email}</span>
+                <label className="text-[11px] font-bold text-gray-600 block mb-1">Registered Account Mobile #</label>
+                <input
+                  type="text"
+                  value={walletPhone}
+                  onChange={(e) => setWalletPhone(e.target.value)}
+                  placeholder="0300-1234567"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 font-mono focus:outline-none focus:border-indigo-600"
+                />
               </div>
-              <strong className="text-lg font-black font-mono text-[#5B3DF5]">Rs. {getTotal()}</strong>
+
+              <div className="p-3.5 bg-gray-50 rounded-xl flex justify-between items-center text-xs font-bold">
+                <span className="text-gray-600">Total Payable:</span>
+                <span className="text-indigo-600 text-sm">Rs. {getTotal()}</span>
+              </div>
             </div>
 
-            <form onSubmit={handleAuthorizeOnlineWallet} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-[#17172B]">Registered Mobile Account Number</label>
-                <div className="relative">
-                  <input
-                    type="tel"
-                    required
-                    value={walletPhone}
-                    onChange={(e) => setWalletPhone(e.target.value)}
-                    placeholder="0300-1234567"
-                    disabled={authorizingPayment}
-                    className="w-full bg-white border border-[#E8E8F0] rounded-xl px-3.5 py-2.5 pl-9 text-xs text-[#17172B] focus:outline-none focus:border-[#5B3DF5] font-mono"
-                  />
-                  <Smartphone className="w-4 h-4 text-[#62627A] absolute left-3 top-3" />
-                </div>
-                <p className="text-[10px] text-[#62627A] mt-1">
-                  A simulated prompt will authorize payment securely and submit your order immediately.
-                </p>
-              </div>
-
-              <div className="flex space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowOnlinePaymentModal(false)}
-                  disabled={authorizingPayment}
-                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-[#17172B] rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={authorizingPayment || !walletPhone}
-                  className="flex-1 py-2.5 bg-[#5B3DF5] hover:bg-[#4F46E5] text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center justify-center space-x-1.5"
-                >
-                  {authorizingPayment ? (
-                    <>
-                      <RotateCcw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Authorizing…</span>
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="w-3.5 h-3.5" />
-                      <span>Authorize & Pay</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                onClick={() => setShowOnlinePaymentModal(false)}
+                className="py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleWalletPaymentConfirm}
+                disabled={authorizingPayment}
+                className="py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center space-x-1.5"
+              >
+                {authorizingPayment ? (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Authorizing...</span>
+                  </>
+                ) : (
+                  <span>Pay Now</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

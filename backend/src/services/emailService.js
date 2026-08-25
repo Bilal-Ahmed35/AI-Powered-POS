@@ -2,8 +2,8 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const QRCode = require('qrcode');
 
-// Configure SMTP transporter (will use environment variables, fallback to mock logs if not configured)
 const createTransporter = () => {
   const host = process.env.SMTP_HOST;
   const port = process.env.SMTP_PORT || 587;
@@ -13,36 +13,26 @@ const createTransporter = () => {
   if (host && user && pass) {
     return nodemailer.createTransport({
       host,
-      port: parseInt(port),
+      port: parseInt(port, 10),
       secure: port == 465,
-      auth: { user, pass }
+      auth: { user, pass },
     });
   }
   return null;
 };
 
-// Send email using Resend REST API if API Key is configured
 const sendViaResend = async (to, subject, text, html) => {
   const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey || apiKey.trim() === "") {
-    return false;
-  }
+  if (!apiKey || apiKey.trim() === '') return false;
 
   try {
     const from = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
-    const response = await axios.post('https://api.resend.com/emails', {
-      from,
-      to: [to],
-      subject,
-      text,
-      html
-    }, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    console.log(`[Email Service] Resend API success. Sent email to ${to}. ID: ${response.data.id}`);
+    const response = await axios.post(
+      'https://api.resend.com/emails',
+      { from, to: [to], subject, text, html },
+      { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' } }
+    );
+    console.log(`[Email Service] Resend API success. Sent to ${to}. ID: ${response.data.id}`);
     return true;
   } catch (err) {
     console.error(`[Email Service] Resend API failed for ${to}:`, err.response?.data || err.message);
@@ -50,7 +40,6 @@ const sendViaResend = async (to, subject, text, html) => {
   }
 };
 
-// Log email locally to a text file for quick offline review and validation
 const logEmailLocally = (to, subject, textContent, htmlContent) => {
   try {
     const logPath = path.join(__dirname, '../../email_logs.txt');
@@ -60,7 +49,7 @@ TO: ${to}
 SUBJECT: ${subject}
 TEXT CONTENT:
 ${textContent}
-HTML CONTENT PREVIEW:
+HTML PREVIEW:
 ${htmlContent}
 ${logDivider}`;
 
@@ -71,458 +60,252 @@ ${logDivider}`;
   }
 };
 
-const getPaymentMethodLabel = (method) => {
-  if (method === 'COD') return 'Pay Cash';
-  return method || 'None';
+const sendMailGeneric = async (to, subject, textContent, htmlContent) => {
+  const sentViaResend = await sendViaResend(to, subject, textContent, htmlContent);
+  if (sentViaResend) return;
+
+  const transporter = createTransporter();
+  if (transporter) {
+    try {
+      await transporter.sendMail({
+        from: `"SwipeBite POS Canteen" <${process.env.SMTP_USER || 'no-reply@swipebite.com'}>`,
+        to,
+        subject,
+        text: textContent,
+        html: htmlContent,
+      });
+      console.log(`[Email Service] SMTP email sent successfully to ${to}`);
+    } catch (err) {
+      console.error(`[Email Service] SMTP send failed: ${err.message}`);
+      logEmailLocally(to, subject, textContent, htmlContent);
+    }
+  } else {
+    logEmailLocally(to, subject, textContent, htmlContent);
+  }
 };
 
+const buildItemsHtml = (orderItems = []) => {
+  let text = '';
+  let html = '';
+
+  orderItems.forEach((item) => {
+    const name = item.nameSnapshot || item.menuItem?.name || 'Item';
+    const price = item.priceSnapshot ?? item.price ?? 0;
+    const subtotal = item.subtotal ?? (price * item.quantity);
+    text += `- ${name} x ${item.quantity} @ Rs. ${price.toFixed(2)} = Rs. ${subtotal.toFixed(2)}\n`;
+    html += `
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">${name}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">Rs. ${price.toFixed(2)}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">Rs. ${subtotal.toFixed(2)}</td>
+      </tr>
+    `;
+  });
+
+  return { text, html };
+};
+
+/**
+ * 1. Send Order Placement Email with Dynamic Tracking QR code and AI ETA
+ */
 const sendOrderPlacementEmail = async (order) => {
-  const userEmail = order.user?.email || 'customer@pos.com';
+  const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
   const userName = order.user?.name || 'Customer';
-  const subject = `Order Confirmed - SwipeBite POS #${order.id}`;
+  const orderNum = order.orderNumber || `#000${order.id}`;
+  const subject = `Order Confirmed: ${orderNum} - SwipeBite POS`;
+  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const trackingUrl = `${baseUrl.replace(/\/$/, '')}/customer/track/${order.trackingToken || order.id}`;
 
-  const dateStr = new Date(order.createdAt).toLocaleString();
-  let itemsBreakdownText = '';
-  let itemsBreakdownHtml = '';
-
-  order.orderItems.forEach((item) => {
-    const itemName = item.menuItem?.name || 'Item';
-    const subtotal = (item.price * item.quantity).toFixed(2);
-    itemsBreakdownText += `- ${itemName} x ${item.quantity} @ $${item.price.toFixed(2)} = $${subtotal}\n`;
-    itemsBreakdownHtml += `
-      <tr>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">${itemName}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$${item.price.toFixed(2)}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$${subtotal}</td>
-      </tr>
-    `;
-  });
-
-  let etaMinutes = 'N/A';
-  let kitchenLoad = 'N/A';
-  let explanation = 'No details available.';
+  let trackingQrDataUrl = '';
   try {
-    const { calculateETA } = require('./etaService');
-    const itemsPayload = order.orderItems.map(item => ({
-      menuItemId: item.menuItemId,
-      quantity: item.quantity
-    }));
-    const etaData = await calculateETA(itemsPayload);
-    etaMinutes = `${etaData.estimatedTime} minutes`;
-    kitchenLoad = etaData.kitchenLoad;
-    explanation = etaData.explanation || '';
-  } catch (err) {
-    console.error('Failed to calculate ETA for email:', err);
+    trackingQrDataUrl = await QRCode.toDataURL(trackingUrl, {
+      margin: 1,
+      width: 180,
+      color: { dark: '#4f46e5', light: '#ffffff' },
+    });
+  } catch (e) {
+    console.warn('QR generation for email failed:', e.message);
   }
+
+  const { text: itemsText, html: itemsHtml } = buildItemsHtml(order.orderItems);
+  const etaMins = order.etaPrediction?.adjustedEta ? `${Math.round(order.etaPrediction.adjustedEta)} mins` : '10-15 mins';
 
   const textContent = `Hi ${userName},
 
-Thank you for your order! Your order has been placed successfully.
-
-Order ID: #000${order.id}
-Date & Time: ${dateStr}
-Estimated Prep Time: ${etaMinutes} (Kitchen Load: ${kitchenLoad})
-Details: ${explanation}
-
-Bill Breakdown:
-${itemsBreakdownText}
-Total Amount: $${order.total.toFixed(2)}
+Thank you for your order!
+Order Number: ${orderNum}
+Table: ${order.tableNumber || 'Takeaway'}
+Estimated Ready Time: ~${etaMins}
+Payment Method: ${order.paymentMethod || 'COD'}
 Payment Status: ${order.paymentStatus}
 
-We are preparing your order! You can track its live status in your dashboard.
+Order Breakdown:
+${itemsText}
+Total Amount: Rs. ${order.total.toFixed(2)}
 
-Sincerely,
-SwipeBite Canteen Team`;
+Track your live order status here:
+${trackingUrl}
+
+SwipeBite Team`;
 
   const htmlContent = `
-    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-      <div style="background-color: #6366f1; padding: 20px; text-align: center; color: white;">
-        <h2 style="margin: 0; font-size: 24px; font-weight: bold;">Order Confirmed!</h2>
-        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Thank you for ordering with SwipeBite</p>
+    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden;">
+      <div style="background: linear-gradient(135deg, #4f46e5, #7c3aed); padding: 24px; text-align: center; color: white;">
+        <h2 style="margin: 0; font-size: 22px;">Order Confirmed!</h2>
+        <p style="margin: 6px 0 0 0; opacity: 0.9; font-size: 14px;">SwipeBite Smart POS</p>
       </div>
-      <div style="padding: 25px;">
-        <p style="font-size: 16px; margin-top: 0;">Hi <strong>${userName}</strong>,</p>
-        <p style="font-size: 14px; line-height: 1.5; color: #555;">Your order has been placed successfully. Below is your detailed receipt:</p>
-        
-        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #f0f0f0;">
+      <div style="padding: 24px;">
+        <p>Hi <strong>${userName}</strong>,</p>
+        <p>Your order has been placed successfully. Here is your receipt:</p>
+
+        <div style="background: #f9fafb; border: 1px solid #f3f4f6; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
           <table style="width: 100%; font-size: 13px;">
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Order ID:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px;">#000${order.id}</td>
-            </tr>
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Date & Time:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px;">${dateStr}</td>
-            </tr>
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Estimated Prep Time:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px; color: #6366f1; font-weight: bold;">${etaMinutes}</td>
-            </tr>
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Kitchen Load:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px;">${kitchenLoad}</td>
-            </tr>
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Status Details:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px; font-style: italic; color: #666;">${explanation}</td>
-            </tr>
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Payment Method:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px; font-weight: bold;">${getPaymentMethodLabel(order.paymentMethod)}</td>
-            </tr>
-            <tr>
-              <td style="color: #666;"><strong>Payment Status:</strong></td>
-              <td style="text-align: right; font-weight: bold;">${order.paymentStatus}</td>
-            </tr>
+            <tr><td><strong>Order Number:</strong></td><td style="text-align: right; font-weight: bold; color: #4f46e5;">${orderNum}</td></tr>
+            <tr><td><strong>Table / Service:</strong></td><td style="text-align: right;">${order.tableNumber || 'Takeaway'}</td></tr>
+            <tr><td><strong>AI Estimated Prep Time:</strong></td><td style="text-align: right; font-weight: bold; color: #10b981;">~${etaMins}</td></tr>
+            <tr><td><strong>Payment:</strong></td><td style="text-align: right;">${order.paymentMethod || 'COD'} (${order.paymentStatus})</td></tr>
           </table>
         </div>
 
         <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
           <thead>
-            <tr style="background-color: #f3f4f6;">
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: left;">Item</th>
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: center;">Qty</th>
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Price</th>
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Subtotal</th>
+            <tr style="background: #f3f4f6;">
+              <th style="padding: 8px; text-align: left;">Item</th>
+              <th style="padding: 8px; text-align: center;">Qty</th>
+              <th style="padding: 8px; text-align: right;">Price</th>
+              <th style="padding: 8px; text-align: right;">Subtotal</th>
             </tr>
           </thead>
-          <tbody>
-            ${itemsBreakdownHtml}
-          </tbody>
+          <tbody>${itemsHtml}</tbody>
         </table>
 
-        <div style="text-align: right; font-size: 15px; margin-bottom: 25px;">
-          <strong>Total Amount:</strong> <span style="font-size: 18px; color: #6366f1; font-weight: bold; margin-left: 10px;">$${order.total.toFixed(2)}</span>
+        <div style="text-align: right; font-size: 16px; margin-bottom: 24px;">
+          <strong>Total Amount:</strong> <span style="font-size: 18px; color: #4f46e5; font-weight: bold; margin-left: 10px;">Rs. ${order.total.toFixed(2)}</span>
         </div>
 
-        <p style="font-size: 14px; line-height: 1.5; color: #555;">Payment method used: <strong>${order.paymentMethod || 'None'}</strong>. We have started processing your order, and it will be sent to the kitchen for preparation.</p>
-        
-        <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
-        <p style="font-size: 12px; color: #888; text-align: center; margin: 0;">This is an automated receipt from SwipeBite Canteen POS System.</p>
+        ${trackingQrDataUrl ? `
+        <div style="text-align: center; padding: 16px; background: #faf5ff; border: 1px dashed #c084fc; border-radius: 12px; margin-bottom: 20px;">
+          <p style="margin: 0 0 10px 0; font-size: 12px; font-weight: bold; color: #7e22ce;">Scan or Click below to Track Live Order Status</p>
+          <img src="${trackingQrDataUrl}" alt="Order QR" style="width: 130px; height: 130px; display: inline-block;" />
+          <div style="margin-top: 12px;">
+            <a href="${trackingUrl}" style="background: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-size: 12px; font-weight: bold; display: inline-block;">Open Live Tracker</a>
+          </div>
+        </div>
+        ` : ''}
+
+        <p style="font-size: 12px; color: #9ca3af; text-align: center; margin: 0;">Automated notification from SwipeBite Canteen System.</p>
       </div>
     </div>
   `;
 
-  // Try sending via Resend first
-  const sentViaResend = await sendViaResend(userEmail, subject, textContent, htmlContent);
-  if (sentViaResend) return;
-
-  const transporter = createTransporter();
-  if (transporter) {
-    try {
-      await transporter.sendMail({
-        from: `"SwipeBite POS Canteen" <${process.env.SMTP_USER}>`,
-        to: userEmail,
-        subject,
-        text: textContent,
-        html: htmlContent
-      });
-      console.log(`[Email Service] Order confirmation email sent successfully to ${userEmail}`);
-    } catch (err) {
-      console.error(`[Email Service] Failed to send order placement SMTP email: ${err.message}`);
-      logEmailLocally(userEmail, subject, textContent, htmlContent);
-    }
-  } else {
-    logEmailLocally(userEmail, subject, textContent, htmlContent);
-  }
+  await sendMailGeneric(userEmail, subject, textContent, htmlContent);
 };
 
-const sendOrderCompletionEmail = async (order) => {
-  const userEmail = order.user?.email || 'customer@pos.com';
-  const userName = order.user?.name || 'Customer';
-  const subject = `Order Completed & Handed Over - SwipeBite POS #${order.id}`;
-
-  const dateStr = new Date(order.createdAt).toLocaleString();
-  let itemsBreakdownText = '';
-  let itemsBreakdownHtml = '';
-
-  order.orderItems.forEach((item) => {
-    const itemName = item.menuItem?.name || 'Item';
-    const subtotal = (item.price * item.quantity).toFixed(2);
-    itemsBreakdownText += `- ${itemName} x ${item.quantity} @ $${item.price.toFixed(2)} = $${subtotal}\n`;
-    itemsBreakdownHtml += `
-      <tr>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">${itemName}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$${item.price.toFixed(2)}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$${subtotal}</td>
-      </tr>
-    `;
-  });
-
-  const textContent = `Hi ${userName},
-
-Your order has been completed and handed over to you!
-
-Order ID: #000${order.id}
-Date & Time: ${dateStr}
-Payment Status: ${order.paymentStatus}
-
-Bill Breakdown:
-${itemsBreakdownText}
-Total Amount: $${order.total.toFixed(2)}
-
-Thank you for dining with SwipeBite!
-
-Sincerely,
-SwipeBite Canteen Team`;
-
+/**
+ * 2. Payment Confirmed Notification
+ */
+const sendPaymentConfirmedEmail = async (order) => {
+  const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
+  const orderNum = order.orderNumber || `#000${order.id}`;
+  const subject = `Payment Confirmed: ${orderNum} - SwipeBite POS`;
+  const textContent = `Your payment of Rs. ${order.total.toFixed(2)} for ${orderNum} has been verified and marked as PAID. Order is now queued for kitchen preparation.`;
   const htmlContent = `
-    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-      <div style="background-color: #6b7280; padding: 20px; text-align: center; color: white;">
-        <h2 style="margin: 0; font-size: 24px; font-weight: bold;">Order Completed</h2>
-        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Thank you for dining with SwipeBite</p>
-      </div>
-      <div style="padding: 25px;">
-        <p style="font-size: 16px; margin-top: 0;">Hi <strong>${userName}</strong>,</p>
-        <p style="font-size: 14px; line-height: 1.5; color: #555;">Your order has been completed and successfully handed over to you at the counter. Here are the details:</p>
-        
-        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #f0f0f0;">
-          <table style="width: 100%; font-size: 13px;">
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Order ID:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px;">#000${order.id}</td>
-            </tr>
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Date & Time:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px;">${dateStr}</td>
-            </tr>
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Payment Method:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px; font-weight: bold;">${getPaymentMethodLabel(order.paymentMethod)}</td>
-            </tr>
-            <tr>
-              <td style="color: #666;"><strong>Payment Status:</strong></td>
-              <td style="text-align: right; font-weight: bold;">${order.paymentStatus}</td>
-            </tr>
-          </table>
-        </div>
-
-        <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
-          <thead>
-            <tr style="background-color: #f3f4f6;">
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: left;">Item</th>
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: center;">Qty</th>
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Price</th>
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Subtotal</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsBreakdownHtml}
-          </tbody>
-        </table>
-
-        <div style="text-align: right; font-size: 15px; margin-bottom: 25px;">
-          <strong>Total Amount Paid:</strong> <span style="font-size: 18px; color: #1f2937; font-weight: bold; margin-left: 10px;">$${order.total.toFixed(2)}</span>
-        </div>
-
-        <p style="font-size: 14px; line-height: 1.5; color: #555; text-align: center;">We hope to serve you again soon!</p>
-        
-        <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
-        <p style="font-size: 12px; color: #888; text-align: center; margin: 0;">This is an automated receipt from SwipeBite Canteen POS System.</p>
-      </div>
+    <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 500px; border: 1px solid #e5e7eb; border-radius: 12px;">
+      <h3 style="color: #10b981;">Payment Verified & Confirmed</h3>
+      <p>Your payment of <strong>Rs. ${order.total.toFixed(2)}</strong> via <strong>${order.paymentMethod || 'Online'}</strong> (TxID: ${order.paymentTxId || 'Verified'}) has been approved.</p>
+      <p>Our kitchen team is now preparing your delicious meal!</p>
     </div>
   `;
-
-  // Try sending via Resend first
-  const sentViaResend = await sendViaResend(userEmail, subject, textContent, htmlContent);
-  if (sentViaResend) return;
-
-  const transporter = createTransporter();
-  if (transporter) {
-    try {
-      await transporter.sendMail({
-        from: `"SwipeBite POS Canteen" <${process.env.SMTP_USER}>`,
-        to: userEmail,
-        subject,
-        text: textContent,
-        html: htmlContent
-      });
-      console.log(`[Email Service] Order completion email sent successfully to ${userEmail}`);
-    } catch (err) {
-      console.error(`[Email Service] Failed to send order completion SMTP email: ${err.message}`);
-      logEmailLocally(userEmail, subject, textContent, htmlContent);
-    }
-  } else {
-    logEmailLocally(userEmail, subject, textContent, htmlContent);
-  }
+  await sendMailGeneric(userEmail, subject, textContent, htmlContent);
 };
 
+/**
+ * 3. Order Ready for Pickup
+ */
 const sendOrderReadyEmail = async (order) => {
-  const userEmail = order.user?.email || 'customer@pos.com';
-  const userName = order.user?.name || 'Customer';
-  const subject = `Order Ready for Pickup! - SwipeBite POS #${order.id}`;
-
-  const dateStr = new Date(order.createdAt).toLocaleString();
-  let itemsBreakdownText = '';
-  let itemsBreakdownHtml = '';
-
-  order.orderItems.forEach((item) => {
-    const itemName = item.menuItem?.name || 'Item';
-    const subtotal = (item.price * item.quantity).toFixed(2);
-    itemsBreakdownText += `- ${itemName} x ${item.quantity} @ $${item.price.toFixed(2)} = $${subtotal}\n`;
-    itemsBreakdownHtml += `
-      <tr>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: left;">${itemName}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$${item.price.toFixed(2)}</td>
-        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">$${subtotal}</td>
-      </tr>
-    `;
-  });
-
-  const textContent = `Hi ${userName},
-
-Your order has been successfully prepared and is ready for pickup!
-
-Order ID: #000${order.id}
-Date & Time: ${dateStr}
-ETA Update: Ready for Pickup
-Payment Status: ${order.paymentStatus}
-
-Bill Breakdown:
-${itemsBreakdownText}
-Total Amount: $${order.total.toFixed(2)}
-
-Please collect your order from the pickup counter. We hope you enjoy your meal!
-
-Sincerely,
-SwipeBite Canteen Team`;
-
+  const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
+  const orderNum = order.orderNumber || `#000${order.id}`;
+  const subject = `Meal Ready for Pickup: ${orderNum} - SwipeBite`;
+  const textContent = `Your order ${orderNum} is ready! Please collect your food from the pickup counter.`;
   const htmlContent = `
-    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-      <div style="background-color: #10b981; padding: 20px; text-align: center; color: white;">
-        <h2 style="margin: 0; font-size: 24px; font-weight: bold;">Order Ready!</h2>
-        <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;">Your meal is ready for collection</p>
-      </div>
-      <div style="padding: 25px;">
-        <p style="font-size: 16px; margin-top: 0;">Hi <strong>${userName}</strong>,</p>
-        <p style="font-size: 14px; line-height: 1.5; color: #555;">Great news! Your order is ready for pickup at the counter. Here are the details:</p>
-        
-        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #f0f0f0;">
-          <table style="width: 100%; font-size: 13px;">
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Order ID:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px;">#000${order.id}</td>
-            </tr>
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Date & Time:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px;">${dateStr}</td>
-            </tr>
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>ETA Update:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px; color: #10b981; font-weight: bold;">Ready for Pickup</td>
-            </tr>
-            <tr>
-              <td style="color: #666; padding-bottom: 5px;"><strong>Payment Method:</strong></td>
-              <td style="text-align: right; padding-bottom: 5px; font-weight: bold;">${getPaymentMethodLabel(order.paymentMethod)}</td>
-            </tr>
-            <tr>
-              <td style="color: #666;"><strong>Payment Status:</strong></td>
-              <td style="text-align: right; font-weight: bold;">${order.paymentStatus}</td>
-            </tr>
-          </table>
-        </div>
-
-        <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
-          <thead>
-            <tr style="background-color: #f3f4f6;">
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: left;">Item</th>
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: center;">Qty</th>
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Price</th>
-              <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Subtotal</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsBreakdownHtml}
-          </tbody>
-        </table>
-
-        <div style="text-align: right; font-size: 15px; margin-bottom: 25px;">
-          <strong>Total Amount:</strong> <span style="font-size: 18px; color: #10b981; font-weight: bold; margin-left: 10px;">$${order.total.toFixed(2)}</span>
-        </div>
-
-        <p style="font-size: 14px; line-height: 1.5; color: #555; text-align: center; padding: 10px; background-color: #ecfdf5; border-radius: 8px; color: #065f46; font-weight: bold;">
-          Enjoy your meal! 🍔🍕☕
-        </p>
-        
-        <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
-        <p style="font-size: 12px; color: #888; text-align: center; margin: 0;">This is an automated receipt from SwipeBite Canteen POS System.</p>
-      </div>
+    <div style="font-family: Arial, sans-serif; padding: 24px; max-width: 500px; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center;">
+      <h2 style="color: #10b981; margin-top: 0;">Your Order is Ready! 🛎️</h2>
+      <p style="font-size: 14px;">Order <strong>${orderNum}</strong> has been freshly prepared and is waiting at the counter.</p>
+      <p style="font-size: 16px; font-weight: bold; color: #4f46e5;">Placement: ${order.tableNumber || 'Takeaway'}</p>
+      <p style="font-size: 13px; color: #6b7280;">Enjoy your meal!</p>
     </div>
   `;
-
-  // Try sending via Resend first
-  const sentViaResend = await sendViaResend(userEmail, subject, textContent, htmlContent);
-  if (sentViaResend) return;
-
-  const transporter = createTransporter();
-  if (transporter) {
-    try {
-      await transporter.sendMail({
-        from: `"SwipeBite POS Canteen" <${process.env.SMTP_USER}>`,
-        to: userEmail,
-        subject,
-        text: textContent,
-        html: htmlContent
-      });
-      console.log(`[Email Service] Order ready email sent successfully to ${userEmail}`);
-    } catch (err) {
-      console.error(`[Email Service] Failed to send order ready SMTP email: ${err.message}`);
-      logEmailLocally(userEmail, subject, textContent, htmlContent);
-    }
-  } else {
-    logEmailLocally(userEmail, subject, textContent, htmlContent);
-  }
+  await sendMailGeneric(userEmail, subject, textContent, htmlContent);
 };
 
+/**
+ * 4. Order Completed
+ */
+const sendOrderCompletionEmail = async (order) => {
+  const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
+  const orderNum = order.orderNumber || `#000${order.id}`;
+  const subject = `Order Completed: ${orderNum} - Thank you for dining with SwipeBite`;
+  const textContent = `Thank you for visiting SwipeBite! Your order ${orderNum} has been completed.`;
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; padding: 24px; max-width: 500px; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center;">
+      <h3 style="color: #4f46e5;">Thank You! 🍽️</h3>
+      <p>Order <strong>${orderNum}</strong> was handed over successfully.</p>
+      <p>We hope to serve you again soon!</p>
+    </div>
+  `;
+  await sendMailGeneric(userEmail, subject, textContent, htmlContent);
+};
+
+/**
+ * 5. Order Cancellation / Refund
+ */
+const sendOrderCancellationEmail = async (order, reason = 'CANCELLED') => {
+  const userEmail = order.customerEmail || order.user?.email || 'customer@pos.com';
+  const orderNum = order.orderNumber || `#000${order.id}`;
+  const subject = `Order ${reason}: ${orderNum} - SwipeBite POS`;
+  const textContent = `Your order ${orderNum} has been marked as ${reason}. Total amount: Rs. ${order.total.toFixed(2)}.`;
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; padding: 24px; max-width: 500px; border: 1px solid #fecdd3; background: #fff1f2; border-radius: 12px;">
+      <h3 style="color: #e11d48; margin-top: 0;">Order ${reason}</h3>
+      <p>Order <strong>${orderNum}</strong> has been updated to <strong>${reason}</strong>.</p>
+      <p>Amount: <strong>Rs. ${order.total.toFixed(2)}</strong></p>
+      <p style="font-size: 12px; color: #881337;">If you have questions regarding payment or cancellation, please visit the counter.</p>
+    </div>
+  `;
+  await sendMailGeneric(userEmail, subject, textContent, htmlContent);
+};
+
+/**
+ * 6. Send OTP Email
+ */
 const sendOTPEmail = async (email, name, otp) => {
   const subject = `SwipeBite Verification Code: ${otp}`;
   const textContent = `Hi ${name || 'Customer'},\n\nYour OTP for verification is: ${otp}\n\nThis code expires in 5 minutes.\n\nBest regards,\nSwipeBite Team`;
   const htmlContent = `
-    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-      <div style="background-color: #6366f1; padding: 20px; text-align: center; color: white;">
-        <h2 style="margin: 0; font-size: 24px; font-weight: bold;">Verification Code</h2>
+    <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 16px; overflow: hidden;">
+      <div style="background: #4f46e5; padding: 20px; text-align: center; color: white;">
+        <h2 style="margin: 0; font-size: 20px;">Email Verification</h2>
       </div>
-      <div style="padding: 25px; text-align: center;">
-        <p style="font-size: 16px; text-align: left;">Hi <strong>${name || 'Customer'}</strong>,</p>
-        <p style="font-size: 14px; line-height: 1.5; color: #555; text-align: left;">Please use the following One-Time Password (OTP) to verify your email. This code is valid for 5 minutes:</p>
-        <div style="display: inline-block; margin: 25px auto; padding: 15px 30px; background-color: #f3f4f6; border-radius: 8px; font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #4f46e5; border: 1px dashed #6366f1;">
+      <div style="padding: 24px; text-align: center;">
+        <p style="text-align: left;">Hi <strong>${name || 'Customer'}</strong>,</p>
+        <p style="text-align: left; font-size: 14px; color: #4b5563;">Use the following One-Time Password (OTP) to verify your account. Valid for 5 minutes:</p>
+        <div style="margin: 20px auto; padding: 14px 28px; background: #f3f4f6; border-radius: 10px; font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #4f46e5; display: inline-block;">
           ${otp}
         </div>
-        <p style="font-size: 12px; color: #888; text-align: center; margin-top: 20px;">If you did not request this verification, please ignore this email.</p>
+        <p style="font-size: 12px; color: #9ca3af; margin-top: 16px;">If you did not request this code, you can safely ignore this email.</p>
       </div>
     </div>
   `;
 
-  // Try sending via Resend first
-  const sentViaResend = await sendViaResend(email, subject, textContent, htmlContent);
-  if (sentViaResend) return;
-
-  const transporter = createTransporter();
-  if (transporter) {
-    try {
-      await transporter.sendMail({
-        from: `"SwipeBite POS Canteen" <${process.env.SMTP_USER}>`,
-        to: email,
-        subject,
-        text: textContent,
-        html: htmlContent
-      });
-      console.log(`[Email Service] Verification OTP sent successfully to ${email}`);
-    } catch (err) {
-      console.error(`[Email Service] Failed to send OTP SMTP email: ${err.message}`);
-      logEmailLocally(email, subject, textContent, htmlContent);
-    }
-  } else {
-    logEmailLocally(email, subject, textContent, htmlContent);
-  }
+  await sendMailGeneric(email, subject, textContent, htmlContent);
 };
 
 module.exports = {
   sendOrderPlacementEmail,
-  sendOrderCompletionEmail,
+  sendPaymentConfirmedEmail,
   sendOrderReadyEmail,
-  sendOTPEmail
+  sendOrderCompletionEmail,
+  sendOrderCancellationEmail,
+  sendOTPEmail,
 };

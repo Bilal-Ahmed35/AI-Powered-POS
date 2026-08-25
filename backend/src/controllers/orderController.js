@@ -1,125 +1,251 @@
 const { prisma } = require('../config/db');
 const { emitToVendor, emitToKitchen, emitToUser, emitToAdmin } = require('../sockets/socket');
-const { sendOrderPlacementEmail, sendOrderCompletionEmail } = require('../services/emailService');
+const {
+  sendOrderPlacementEmail,
+  sendOrderCompletionEmail,
+  sendOrderReadyEmail,
+  sendOrderCancellationEmail,
+  sendPaymentConfirmedEmail,
+} = require('../services/emailService');
 const { calculateETA } = require('../services/etaService');
+const { generateOrderTrackingToken } = require('../services/qrSecurityService');
+const { logAudit } = require('../middleware/auditMiddleware');
 
+/**
+ * Generate human-friendly unique order number (e.g. ORD-2026-8941)
+ */
+const generateOrderNumber = () => {
+  const year = new Date().getFullYear();
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  return `ORD-${year}-${randomSuffix}`;
+};
+
+/**
+ * Place a new order with immutable snapshots, server pricing recalculation, and stock reservation
+ */
 const createOrder = async (req, res) => {
-  const { items, tableId, paymentMethod, paymentStatus, paymentTxId, status, customerEmail, emailVerified } = req.body;
+  const {
+    items,
+    tableId,
+    sessionId,
+    paymentMethod = 'COD',
+    paymentStatus = 'UNPAID',
+    paymentTxId,
+    customerEmail,
+    emailVerified,
+  } = req.body;
+
   const userId = req.user.id;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'Order must contain at least one item.' });
+    return res.status(400).json({ error: 'Order must contain at least one menu item.' });
   }
 
   try {
-    // Run DB transaction to ensure consistency
+    let resolvedTableId = null;
+    let resolvedTableNumber = 'Takeaway';
+    let resolvedBranchId = 1;
+
+    // Verify dining session and physical table
+    if (sessionId) {
+      const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: { table: true },
+      });
+
+      if (!session) {
+        return res.status(404).json({ error: 'Dining session not found.' });
+      }
+
+      if (session.status !== 'ACTIVE') {
+        return res.status(400).json({ error: `Dining session is ${session.status.toLowerCase()}.` });
+      }
+
+      resolvedTableId = session.tableId;
+      resolvedTableNumber = session.table?.tableNumber || `Table ${session.tableId}`;
+      resolvedBranchId = session.table?.branchId || 1;
+    } else if (tableId) {
+      const table = await prisma.table.findFirst({
+        where: {
+          OR: [
+            { id: parseInt(tableId, 10) || -1 },
+            { tableNumber: String(tableId) },
+            { tableNumber: `Table ${String(tableId).replace(/[^0-9]/g, '')}` },
+          ],
+        },
+      });
+
+      if (table) {
+        if (!table.isActive) {
+          return res.status(403).json({ error: `Table ${table.tableNumber} is currently inactive.` });
+        }
+        resolvedTableId = table.id;
+        resolvedTableNumber = table.tableNumber;
+        resolvedBranchId = table.branchId || 1;
+      }
+    }
+
+    // Run DB transaction for atomic order creation and inventory deduction
     const order = await prisma.$transaction(async (tx) => {
-      let total = 0.0;
+      let subtotal = 0.0;
       const orderItemsData = [];
 
       for (const item of items) {
         const menuItem = await tx.menuItem.findUnique({
-          where: { id: item.menuItemId }
+          where: { id: parseInt(item.menuItemId, 10) },
         });
 
         if (!menuItem || !menuItem.isActive) {
           throw new Error(`Menu item with ID ${item.menuItemId} is not available.`);
         }
 
-        if (menuItem.stock < item.quantity) {
-          throw new Error(`Insufficient stock for item: ${menuItem.name}. Available: ${menuItem.stock}`);
+        const qty = parseInt(item.quantity, 10) || 1;
+        if (menuItem.stock < qty) {
+          throw new Error(`Insufficient stock for "${menuItem.name}". Only ${menuItem.stock} available.`);
         }
 
-        // Deduct stock
+        // Deduct stock from MenuItem
         await tx.menuItem.update({
           where: { id: menuItem.id },
-          data: { stock: menuItem.stock - item.quantity }
+          data: { stock: menuItem.stock - qty },
         });
 
-        // Also check and update the raw InventoryItem if it exists (simulate recipes)
+        // Deduct stock from corresponding InventoryItem
         const inventoryItem = await tx.inventoryItem.findFirst({
-          where: { name: menuItem.name }
+          where: { name: menuItem.name },
         });
+
         if (inventoryItem) {
+          const qtyBefore = inventoryItem.stockLevel;
+          const qtyAfter = Math.max(0, qtyBefore - qty);
+
           await tx.inventoryItem.update({
             where: { id: inventoryItem.id },
-            data: { stockLevel: { decrement: parseFloat(item.quantity) } }
+            data: { stockLevel: qtyAfter },
           });
 
           await tx.inventoryLog.create({
             data: {
               inventoryItemId: inventoryItem.id,
-              changeQty: -parseFloat(item.quantity),
+              quantityBefore: qtyBefore,
+              quantityAfter: qtyAfter,
+              changeQty: -qty,
               type: 'DEDUCTION',
-              reason: `Order deduction for menu item: ${menuItem.name}`
-            }
+              reason: `Order placement deduction for: ${menuItem.name}`,
+              userId,
+            },
           });
         }
 
-        total += menuItem.price * item.quantity;
+        const itemSubtotal = menuItem.price * qty;
+        subtotal += itemSubtotal;
+
         orderItemsData.push({
           menuItemId: menuItem.id,
-          quantity: item.quantity,
-          price: menuItem.price
+          nameSnapshot: menuItem.name,
+          priceSnapshot: menuItem.price,
+          quantity: qty,
+          subtotal: itemSubtotal,
         });
       }
 
-      // Calculate ETA prediction details
+      const tax = 0.0;
+      const discount = 0.0;
+      const total = subtotal + tax - discount;
+
+      const orderNumber = generateOrderNumber();
+      const initialStatus = paymentMethod === 'COD' ? 'PENDING' : (paymentStatus === 'PENDING_VERIFICATION' ? 'PAYMENT_PENDING' : 'PENDING');
+
+      // AI ETA Prediction calculation
       let etaResult = { baseEta: 5.0, adjustedEta: 5.0, queueLength: 0, kitchenLoad: 'Low', isPeakHour: false, historicalDelay: 0.0 };
       try {
         etaResult = await calculateETA(items);
       } catch (etaErr) {
-        console.warn('Error calculating ETA during order creation, using default:', etaErr.message);
+        console.warn('AI ETA calculation warning:', etaErr.message);
       }
 
       const newOrder = await tx.order.create({
         data: {
-          tableId,
+          orderNumber,
+          sessionId: sessionId || null,
+          tableId: resolvedTableId,
+          tableNumber: resolvedTableNumber,
+          branchId: resolvedBranchId,
           customerEmail: customerEmail || req.user.email,
           emailVerified: emailVerified !== undefined ? Boolean(emailVerified) : true,
+          status: initialStatus,
+          subtotal,
+          tax,
+          discount,
           total,
-          userId,
           paymentMethod,
-          paymentStatus: paymentStatus || "UNPAID",
+          paymentStatus: paymentStatus || 'UNPAID',
           paymentTxId: paymentTxId || null,
-          status: status || "PENDING",
+          userId,
           orderItems: {
-            create: orderItemsData
-          }
+            create: orderItemsData,
+          },
         },
         include: {
           orderItems: {
-            include: {
-              menuItem: true
-            }
+            include: { menuItem: true },
           },
           user: {
-            select: { id: true, name: true, email: true }
-          }
-        }
+            select: { id: true, name: true, email: true },
+          },
+        },
       });
 
-      // Save ETAPrediction details associated with this order
-      try {
-        await tx.eTAPrediction.create({
-          data: {
-            orderId: newOrder.id,
-            baseEta: etaResult.baseEta,
-            adjustedEta: etaResult.adjustedEta,
-            queueLength: etaResult.queueLength,
-            kitchenLoad: etaResult.kitchenLoad,
-            peakHour: etaResult.isPeakHour,
-            historicalDelay: etaResult.historicalDelay
-          }
-        });
-      } catch (predErr) {
-        console.warn('Failed to save eTAPrediction record:', predErr.message);
+      // Generate cryptographically signed dynamic tracking token
+      const trackingToken = generateOrderTrackingToken(newOrder.id, newOrder.orderNumber);
+      const updatedWithTracking = await tx.order.update({
+        where: { id: newOrder.id },
+        data: { trackingToken },
+        include: {
+          orderItems: { include: { menuItem: true } },
+          user: { select: { id: true, name: true, email: true } },
+        },
+      });
+
+      // Save initial OrderStatusHistory
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: newOrder.id,
+          previousStatus: null,
+          newStatus: initialStatus,
+          changedByUserId: userId,
+          note: `Order placed via ${paymentMethod}`,
+        },
+      });
+
+      // Save ETAPrediction
+      const etaSaved = await tx.eTAPrediction.create({
+        data: {
+          orderId: newOrder.id,
+          baseEta: etaResult.baseEta,
+          adjustedEta: etaResult.adjustedEta,
+          queueLength: etaResult.queueLength,
+          kitchenLoad: etaResult.kitchenLoad,
+          peakHour: etaResult.isPeakHour,
+          historicalDelay: etaResult.historicalDelay,
+        },
+      });
+
+      // Clear server-side cart for this session if applicable
+      if (sessionId) {
+        const cart = await tx.cart.findUnique({ where: { sessionId } });
+        if (cart) {
+          await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
+        }
       }
 
-      return newOrder;
+      return {
+        ...updatedWithTracking,
+        etaPrediction: etaSaved,
+      };
     });
 
-    // Realtime Notifications
+    // Realtime Socket.IO broadcasts
     emitToUser(userId, 'order:update', order);
     emitToVendor('order:new', order);
     emitToAdmin('order:new', order);
@@ -127,119 +253,221 @@ const createOrder = async (req, res) => {
       emitToKitchen('order:new', order);
     }
 
-    // Send email notification immediately after placing order
-    sendOrderPlacementEmail(order).catch(err => console.error('Order placement email failed:', err));
+    // Send confirmation email asynchronously with dynamic tracking QR
+    sendOrderPlacementEmail(order).catch(err => console.error('[Email] Placement email error:', err.message));
 
-    return res.status(201).json({ message: 'Order placed successfully.', order });
+    return res.status(201).json({
+      message: 'Order placed successfully.',
+      order,
+    });
   } catch (error) {
     console.error('Create order error:', error.message);
     return res.status(400).json({ error: error.message || 'Failed to place order.' });
   }
 };
 
+/**
+ * Update order status with strict role transition permissions and stock restoration on cancellation
+ */
 const updateOrderStatus = async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
-  const userRole = req.user.role;
+  const { status, note } = req.body;
+  const userRole = (req.user.role || '').toUpperCase();
+  const userId = req.user.id;
 
-  const validStatuses = ['PENDING', 'PAID', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'];
+  const validStatuses = [
+    'PENDING',
+    'PAYMENT_PENDING',
+    'PAID',
+    'PREPARING',
+    'READY',
+    'COMPLETED',
+    'CANCELLED',
+    'PAYMENT_FAILED',
+    'REFUNDED',
+  ];
+
   if (!status || !validStatuses.includes(status)) {
     return res.status(400).json({ error: 'Invalid order status value.' });
   }
 
   try {
     const order = await prisma.order.findUnique({
-      where: { id: parseInt(id) },
+      where: { id: parseInt(id, 10) },
       include: {
-        orderItems: {
-          include: { menuItem: true }
-        }
-      }
+        orderItems: { include: { menuItem: true } },
+      },
     });
 
     if (!order) {
       return res.status(404).json({ error: 'Order not found.' });
     }
 
-    const normalizedRole = (userRole || '').toUpperCase();
+    const previousStatus = order.status;
 
-    // Role specific state transition check:
-    // ADMIN has full authority over all statuses.
-    // KITCHEN handles PREPARING, READY, COMPLETED.
-    // VENDOR handles PAID, PREPARING, READY, COMPLETED, CANCELLED.
-    if (normalizedRole === 'KITCHEN' && !['PREPARING', 'READY', 'COMPLETED'].includes(status)) {
-      return res.status(403).json({ error: 'Kitchen staff can only mark orders as PREPARING, READY, or COMPLETED.' });
+    // Strict Role-based Transition Permissions
+    if (userRole === 'KITCHEN') {
+      // Kitchen can only mark PREPARING or READY
+      if (!['PREPARING', 'READY'].includes(status)) {
+        return res.status(403).json({ error: 'Kitchen staff can only advance orders to PREPARING or READY.' });
+      }
+      if (status === 'PREPARING' && !['PAID', 'PENDING'].includes(previousStatus)) {
+        return res.status(400).json({ error: `Cannot prepare order from current status "${previousStatus}".` });
+      }
+    } else if (userRole === 'VENDOR') {
+      // Cashier/Vendor handles payment verification, completion/handoff, or cancellation
+      if (status === 'PREPARING') {
+        return res.status(403).json({ error: 'Only Kitchen staff can advance orders to PREPARING.' });
+      }
     }
+    // ADMIN has universal permission
 
-    if (normalizedRole === 'VENDOR' && !['PAID', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'].includes(status)) {
-      return res.status(403).json({ error: 'Vendors can mark orders as PAID, PREPARING, READY, COMPLETED, or CANCELLED.' });
-    }
+    // Execute status transition and stock restore if cancelling/refunding
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      // If cancelling an order, restore deducted stock
+      if (['CANCELLED', 'REFUNDED', 'PAYMENT_FAILED'].includes(status) && !['CANCELLED', 'REFUNDED', 'PAYMENT_FAILED'].includes(previousStatus)) {
+        for (const item of order.orderItems) {
+          await tx.menuItem.update({
+            where: { id: item.menuItemId },
+            data: { stock: { increment: item.quantity } },
+          });
 
-    const updatedOrder = await prisma.order.update({
-      where: { id: order.id },
-      data: { status },
-      include: {
-        orderItems: {
-          include: { menuItem: true }
-        },
-        user: {
-          select: { id: true, name: true, email: true }
+          const inventoryItem = await tx.inventoryItem.findFirst({
+            where: { name: item.nameSnapshot },
+          });
+
+          if (inventoryItem) {
+            const qtyBefore = inventoryItem.stockLevel;
+            const qtyAfter = qtyBefore + item.quantity;
+
+            await tx.inventoryItem.update({
+              where: { id: inventoryItem.id },
+              data: { stockLevel: qtyAfter },
+            });
+
+            await tx.inventoryLog.create({
+              data: {
+                inventoryItemId: inventoryItem.id,
+                quantityBefore: qtyBefore,
+                quantityAfter: qtyAfter,
+                changeQty: item.quantity,
+                type: 'RESTOCK',
+                reason: `Order #${order.orderNumber} ${status} - Stock restored`,
+                orderId: order.id,
+                userId,
+              },
+            });
+          }
         }
       }
+
+      const updatePayload = { status };
+      if (status === 'COMPLETED') {
+        updatePayload.completedAt = new Date();
+      }
+      if (status === 'PAID') {
+        updatePayload.paymentStatus = 'PAID';
+      }
+
+      const updated = await tx.order.update({
+        where: { id: order.id },
+        data: updatePayload,
+        include: {
+          orderItems: { include: { menuItem: true } },
+          user: { select: { id: true, name: true, email: true } },
+          payment: true,
+          etaPrediction: true,
+        },
+      });
+
+      // Record OrderStatusHistory
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: order.id,
+          previousStatus,
+          newStatus: status,
+          changedByUserId: userId,
+          note: note || `Status updated by ${userRole}`,
+        },
+      });
+
+      return updated;
     });
 
-    // Save closed-loop actual preparation time if status becomes READY or COMPLETED
+    // Record closed-loop actual preparation time in ETAPrediction
     if (['READY', 'COMPLETED'].includes(status)) {
       try {
-        const actualTime = (new Date() - new Date(order.createdAt)) / 60000; // in minutes
-        await prisma.eTAPrediction.update({
+        const actualMinutes = (new Date() - new Date(order.createdAt)) / 60000;
+        await prisma.eTAPrediction.updateMany({
           where: { orderId: order.id },
-          data: { actualTime }
+          data: { actualTime: parseFloat(actualMinutes.toFixed(2)) },
         });
-        console.log(`Saved closed-loop actual prep time for Order #${order.id}: ${actualTime.toFixed(2)} mins.`);
       } catch (etaErr) {
-        console.warn(`Failed to update actualTime in eTAPrediction for Order #${order.id}:`, etaErr.message);
+        console.warn('ETA actualTime update warning:', etaErr.message);
       }
     }
 
-    // Broadcast Realtime updates
+    // Broadcast Realtime Socket Events
     emitToUser(updatedOrder.userId, 'order:update', updatedOrder);
     emitToVendor('order:update', updatedOrder);
     emitToAdmin('order:update', updatedOrder);
 
-    // If order was paid, send to Kitchen queue
     if (status === 'PAID') {
       emitToKitchen('order:new', updatedOrder);
+      sendPaymentConfirmedEmail(updatedOrder).catch(err => console.error('[Email] Payment email error:', err.message));
     } else {
       emitToKitchen('order:update', updatedOrder);
     }
 
-    // Trigger email notifications
-    if (status === 'COMPLETED') {
-      sendOrderCompletionEmail(updatedOrder).catch(err => console.error('Order completion email failed:', err));
-    } else if (status === 'READY') {
-      const { sendOrderReadyEmail } = require('../services/emailService');
-      sendOrderReadyEmail(updatedOrder).catch(err => console.error('Order ready email failed:', err));
+    if (status === 'READY') {
+      sendOrderReadyEmail(updatedOrder).catch(err => console.error('[Email] Ready email error:', err.message));
+    } else if (status === 'COMPLETED') {
+      sendOrderCompletionEmail(updatedOrder).catch(err => console.error('[Email] Completion email error:', err.message));
+    } else if (['CANCELLED', 'REFUNDED', 'PAYMENT_FAILED'].includes(status)) {
+      sendOrderCancellationEmail(updatedOrder, status).catch(err => console.error('[Email] Cancel email error:', err.message));
     }
 
-    return res.json({ message: `Order status updated to ${status}.`, order: updatedOrder });
+    await logAudit({
+      userId,
+      action: 'ORDER_STATUS_UPDATED',
+      entity: 'Order',
+      entityId: order.id,
+      oldValue: { status: previousStatus },
+      newValue: { status },
+      req,
+    });
+
+    return res.json({
+      message: `Order status updated to ${status}.`,
+      order: updatedOrder,
+    });
   } catch (error) {
     console.error('Update order status error:', error);
     return res.status(500).json({ error: 'Failed to update order status.' });
   }
 };
 
+/**
+ * Get all orders with role-filtered scope
+ */
 const getAllOrders = async (req, res) => {
-  const { status } = req.query;
-  const userRole = req.user.role;
+  const { status, sessionId } = req.query;
+  const userRole = (req.user.role || '').toUpperCase();
   const userId = req.user.id;
 
   try {
     const whereClause = {};
 
-    // Customer should only see their own orders
+    // Customer only sees orders belonging to their active dining session
     if (userRole === 'CUSTOMER') {
-      whereClause.userId = userId;
+      const headerSessionId = req.headers['x-session-id'];
+      const effectiveSessionId = sessionId || headerSessionId;
+
+      if (effectiveSessionId) {
+        whereClause.sessionId = effectiveSessionId;
+      } else {
+        whereClause.userId = userId;
+      }
     }
 
     if (status) {
@@ -249,14 +477,14 @@ const getAllOrders = async (req, res) => {
     const orders = await prisma.order.findMany({
       where: whereClause,
       include: {
-        orderItems: {
-          include: { menuItem: true }
-        },
-        user: {
-          select: { id: true, name: true, email: true }
-        }
+        orderItems: { include: { menuItem: true } },
+        user: { select: { id: true, name: true, email: true } },
+        payment: true,
+        etaPrediction: true,
+        statusHistory: { orderBy: { createdAt: 'asc' } },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take: 100,
     });
 
     return res.json({ orders });
@@ -266,31 +494,32 @@ const getAllOrders = async (req, res) => {
   }
 };
 
+/**
+ * Get single order by ID
+ */
 const getOrderById = async (req, res) => {
   const { id } = req.params;
-  const userRole = req.user.role;
+  const userRole = (req.user.role || '').toUpperCase();
   const userId = req.user.id;
 
   try {
     const order = await prisma.order.findUnique({
-      where: { id: parseInt(id) },
+      where: { id: parseInt(id, 10) },
       include: {
-        orderItems: {
-          include: { menuItem: true }
-        },
-        user: {
-          select: { id: true, name: true, email: true }
-        }
-      }
+        orderItems: { include: { menuItem: true } },
+        user: { select: { id: true, name: true, email: true } },
+        payment: true,
+        etaPrediction: true,
+        statusHistory: { orderBy: { createdAt: 'asc' } },
+      },
     });
 
     if (!order) {
       return res.status(404).json({ error: 'Order not found.' });
     }
 
-    // Check permissions
     if (userRole === 'CUSTOMER' && order.userId !== userId) {
-      return res.status(403).json({ error: 'Access forbidden. You did not place this order.' });
+      return res.status(403).json({ error: 'Unauthorized access to this order.' });
     }
 
     return res.json({ order });
@@ -300,9 +529,38 @@ const getOrderById = async (req, res) => {
   }
 };
 
+/**
+ * Public dynamic order tracking by secure signed tracking token
+ */
+const getOrderByTrackingToken = async (req, res) => {
+  const { token } = req.params;
+
+  try {
+    const order = await prisma.order.findUnique({
+      where: { trackingToken: token },
+      include: {
+        orderItems: { include: { menuItem: true } },
+        etaPrediction: true,
+        payment: true,
+        statusHistory: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order tracking record not found.' });
+    }
+
+    return res.json({ order });
+  } catch (error) {
+    console.error('Tracking error:', error);
+    return res.status(500).json({ error: 'Failed to retrieve tracking info.' });
+  }
+};
+
 module.exports = {
   createOrder,
   updateOrderStatus,
   getAllOrders,
-  getOrderById
+  getOrderById,
+  getOrderByTrackingToken,
 };

@@ -4,9 +4,13 @@ const http = require('http');
 require('dotenv').config();
 
 const { initSocket } = require('./sockets/socket');
+const { generalLimiter } = require('./middleware/rateLimitMiddleware');
 
 // Route Imports
 const authRoutes = require('./routes/authRoutes');
+const sessionRoutes = require('./routes/sessionRoutes');
+const cartRoutes = require('./routes/cartRoutes');
+const tableRoutes = require('./routes/tableRoutes');
 const menuRoutes = require('./routes/menuRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
@@ -17,15 +21,21 @@ const etaRoutes = require('./routes/etaRoutes');
 const app = express();
 const server = http.createServer(app);
 
-// Middlewares
+// Security & Middlewares
 app.use(cors());
 app.use(express.json());
 
 // Initialize Socket.io
 initSocket(server);
 
+// General Rate Limiter for API endpoints
+app.use('/api', generalLimiter);
+
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/sessions', sessionRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/tables', tableRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
@@ -35,16 +45,20 @@ app.use('/api/eta', etaRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date() });
+  res.json({
+    status: 'healthy',
+    service: 'SwipeBite POS Backend API',
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// Error handling middleware
+// Centralized error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Unhandled server error:', err);
-  res.status(500).json({ error: 'An unexpected error occurred on the server.' });
+  console.error('[Server Error]:', err);
+  res.status(500).json({ error: err.message || 'An unexpected server error occurred.' });
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => {
-  console.log(`Express Backend Server running on port ${PORT}`);
+  console.log(`🚀 SwipeBite POS Backend API Server running on port ${PORT}`);
 });

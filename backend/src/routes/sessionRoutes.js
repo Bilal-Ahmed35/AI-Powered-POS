@@ -1,0 +1,11 @@
+const express = require('express');
+const { startSession, getSession, closeSession } = require('../controllers/sessionController');
+const { optionalAuthMiddleware } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.post('/start', optionalAuthMiddleware, startSession);
+router.get('/:sessionId', getSession);
+router.post('/:sessionId/close', closeSession);
+
+module.exports = router;
