@@ -6,6 +6,9 @@ const {
   createStaff,
   updateStaff,
   toggleStaffStatus,
+  resetStaffPassword,
+  getCustomerList,
+  getOrderStatusHistoryList,
   getBranches,
   createBranch,
 } = require('../controllers/adminController');
@@ -20,12 +23,17 @@ router.use(roleMiddleware(['ADMIN']));
 // Dashboard Analytics & Logs
 router.get('/stats', getDashboardStats);
 router.get('/audit-logs', getAuditLogs);
+router.get('/order-history', getOrderStatusHistoryList);
 
 // Staff Account Management
 router.get('/staff', getStaffList);
 router.post('/staff', createStaff);
 router.put('/staff/:id', updateStaff);
 router.put('/staff/:id/status', toggleStaffStatus);
+router.post('/staff/:id/reset-password', resetStaffPassword);
+
+// Customer Management & Roster
+router.get('/customers', getCustomerList);
 
 // Branch Management
 router.get('/branches', getBranches);

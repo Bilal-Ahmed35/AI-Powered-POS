@@ -410,6 +410,139 @@ const createBranch = async (req, res) => {
   }
 };
 
+/**
+ * Reset Staff Password (Admin Only)
+ */
+const resetStaffPassword = async (req, res) => {
+  const { id } = req.params;
+  const { password } = req.body;
+
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+  }
+
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const updated = await prisma.user.update({
+      where: { id: parseInt(id, 10) },
+      data: { password: hashedPassword },
+      select: { id: true, name: true, email: true, role: true },
+    });
+
+    await logAudit({
+      userId: req.user?.id,
+      action: 'STAFF_PASSWORD_RESET',
+      entity: 'User',
+      entityId: updated.id,
+      req,
+    });
+
+    return res.json({ message: `Password reset successfully for ${updated.name}.` });
+  } catch (error) {
+    console.error('Reset staff password error:', error);
+    return res.status(500).json({ error: 'Failed to reset staff password.' });
+  }
+};
+
+/**
+ * Customer Roster & Analytics List
+ */
+const getCustomerList = async (req, res) => {
+  try {
+    const customers = await prisma.user.findMany({
+      where: { role: 'CUSTOMER' },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        orders: {
+          select: {
+            id: true,
+            orderNumber: true,
+            total: true,
+            status: true,
+            paymentStatus: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        sessions: {
+          select: {
+            id: true,
+            tableId: true,
+            status: true,
+            createdAt: true,
+          },
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const formattedCustomers = customers.map((c) => {
+      const paidOrders = c.orders.filter(o => ['PAID', 'PREPARING', 'READY', 'COMPLETED'].includes(o.status));
+      const totalSpent = paidOrders.reduce((sum, o) => sum + o.total, 0.0);
+      const lastOrder = c.orders.length > 0 ? c.orders[0].createdAt : null;
+
+      return {
+        id: c.id,
+        name: c.name || 'Guest Customer',
+        email: c.email || 'N/A',
+        totalOrders: c.orders.length,
+        paidOrdersCount: paidOrders.length,
+        totalSpent: parseFloat(totalSpent.toFixed(2)),
+        lastOrderDate: lastOrder,
+        createdAt: c.createdAt,
+        isActive: c.isActive !== false,
+        recentOrders: c.orders.slice(0, 5),
+        recentSessions: c.sessions,
+      };
+    });
+
+    return res.json({ customers: formattedCustomers });
+  } catch (error) {
+    console.error('Get customer list error:', error);
+    return res.status(500).json({ error: 'Failed to retrieve customer roster.' });
+  }
+};
+
+/**
+ * Get System-Wide Order Status History Timeline Records
+ */
+const getOrderStatusHistoryList = async (req, res) => {
+  const { orderId, limit = 50 } = req.query;
+
+  try {
+    const where = {};
+    if (orderId) {
+      where.orderId = parseInt(orderId, 10);
+    }
+
+    const history = await prisma.orderStatusHistory.findMany({
+      where,
+      include: {
+        order: {
+          select: { id: true, orderNumber: true, tableId: true, total: true, status: true, paymentMethod: true },
+        },
+        changedByUser: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: parseInt(limit, 10) || 50,
+    });
+
+    return res.json({ history });
+  } catch (error) {
+    console.error('Get order status history list error:', error);
+    return res.status(500).json({ error: 'Failed to retrieve order status history.' });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getAuditLogs,
@@ -417,6 +550,9 @@ module.exports = {
   createStaff,
   updateStaff,
   toggleStaffStatus,
+  resetStaffPassword,
+  getCustomerList,
+  getOrderStatusHistoryList,
   getBranches,
   createBranch,
 };

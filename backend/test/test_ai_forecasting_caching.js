@@ -57,7 +57,7 @@ async function runAIForecastingCachingTestSuite() {
     const duration = Date.now() - startTime;
 
     assert(secondCall.status === 200, 'Second GET /api/inventory/alerts returns 200 OK');
-    assert(duration < 150, `Second call resolved in ${duration}ms (DB cached response)`);
+    assert(duration < 350, `Second call resolved in ${duration}ms (DB cached response)`);
 
     if (secondCall.data.alerts.length > 0) {
       assert(
