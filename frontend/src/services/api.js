@@ -11,29 +11,37 @@ const api = axios.create({
 
 /**
  * Resolves the valid, active token for the current tab / role context.
- * Prioritizes tab-isolated sessionStorage over shared localStorage.
+ * Prioritizes route-scoped storage when on a specific role path.
  */
 export const getActiveAuthToken = () => {
+  if (typeof window !== 'undefined' && window.location) {
+    const path = window.location.pathname || '';
+    if (path.startsWith('/admin')) {
+      const adminSessionToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('admin_token') : null;
+      if (adminSessionToken) return adminSessionToken;
+      const adminLocalToken = typeof localStorage !== 'undefined' ? localStorage.getItem('admin_token') : null;
+      if (adminLocalToken) return adminLocalToken;
+    } else if (path.startsWith('/cashier')) {
+      const vendorSessionToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('vendor_token') : null;
+      if (vendorSessionToken) return vendorSessionToken;
+      const vendorLocalToken = typeof localStorage !== 'undefined' ? localStorage.getItem('vendor_token') : null;
+      if (vendorLocalToken) return vendorLocalToken;
+    } else if (path.startsWith('/kitchen')) {
+      const kitchenSessionToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('kitchen_token') : null;
+      if (kitchenSessionToken) return kitchenSessionToken;
+      const kitchenLocalToken = typeof localStorage !== 'undefined' ? localStorage.getItem('kitchen_token') : null;
+      if (kitchenLocalToken) return kitchenLocalToken;
+    } else if (path.startsWith('/customer')) {
+      const customerSessionToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('customer_token') : null;
+      if (customerSessionToken) return customerSessionToken;
+      const customerLocalToken = typeof localStorage !== 'undefined' ? localStorage.getItem('customer_token') : null;
+      if (customerLocalToken) return customerLocalToken;
+    }
+  }
+
   if (typeof sessionStorage !== 'undefined') {
     const sessionToken = sessionStorage.getItem('token');
     if (sessionToken) return sessionToken;
-  }
-
-  if (typeof window !== 'undefined' && window.location) {
-    const path = window.location.pathname || '';
-    if (path.startsWith('/cashier')) {
-      const vendorToken = localStorage.getItem('vendor_token');
-      if (vendorToken) return vendorToken;
-    } else if (path.startsWith('/kitchen')) {
-      const kitchenToken = localStorage.getItem('kitchen_token');
-      if (kitchenToken) return kitchenToken;
-    } else if (path.startsWith('/admin')) {
-      const adminToken = localStorage.getItem('admin_token');
-      if (adminToken) return adminToken;
-    } else if (path.startsWith('/customer')) {
-      const customerToken = localStorage.getItem('customer_token');
-      if (customerToken) return customerToken;
-    }
   }
 
   if (typeof localStorage !== 'undefined') {
@@ -47,26 +55,34 @@ export const getActiveAuthToken = () => {
  * Resolves the valid refresh token for the current tab / role context.
  */
 export const getActiveRefreshToken = () => {
+  if (typeof window !== 'undefined' && window.location) {
+    const path = window.location.pathname || '';
+    if (path.startsWith('/admin')) {
+      const adminSessionRefresh = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('admin_refreshToken') : null;
+      if (adminSessionRefresh) return adminSessionRefresh;
+      const adminLocalRefresh = typeof localStorage !== 'undefined' ? localStorage.getItem('admin_refreshToken') : null;
+      if (adminLocalRefresh) return adminLocalRefresh;
+    } else if (path.startsWith('/cashier')) {
+      const vendorSessionRefresh = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('vendor_refreshToken') : null;
+      if (vendorSessionRefresh) return vendorSessionRefresh;
+      const vendorLocalRefresh = typeof localStorage !== 'undefined' ? localStorage.getItem('vendor_refreshToken') : null;
+      if (vendorLocalRefresh) return vendorLocalRefresh;
+    } else if (path.startsWith('/kitchen')) {
+      const kitchenSessionRefresh = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('kitchen_refreshToken') : null;
+      if (kitchenSessionRefresh) return kitchenSessionRefresh;
+      const kitchenLocalRefresh = typeof localStorage !== 'undefined' ? localStorage.getItem('kitchen_refreshToken') : null;
+      if (kitchenLocalRefresh) return kitchenLocalRefresh;
+    } else if (path.startsWith('/customer')) {
+      const customerSessionRefresh = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('customer_refreshToken') : null;
+      if (customerSessionRefresh) return customerSessionRefresh;
+      const customerLocalRefresh = typeof localStorage !== 'undefined' ? localStorage.getItem('customer_refreshToken') : null;
+      if (customerLocalRefresh) return customerLocalRefresh;
+    }
+  }
+
   if (typeof sessionStorage !== 'undefined') {
     const sessionRefresh = sessionStorage.getItem('refreshToken');
     if (sessionRefresh) return sessionRefresh;
-  }
-
-  if (typeof window !== 'undefined' && window.location) {
-    const path = window.location.pathname || '';
-    if (path.startsWith('/cashier')) {
-      const vendorRefresh = localStorage.getItem('vendor_refreshToken');
-      if (vendorRefresh) return vendorRefresh;
-    } else if (path.startsWith('/kitchen')) {
-      const kitchenRefresh = localStorage.getItem('kitchen_refreshToken');
-      if (kitchenRefresh) return kitchenRefresh;
-    } else if (path.startsWith('/admin')) {
-      const adminRefresh = localStorage.getItem('admin_refreshToken');
-      if (adminRefresh) return adminRefresh;
-    } else if (path.startsWith('/customer')) {
-      const customerRefresh = localStorage.getItem('customer_refreshToken');
-      if (customerRefresh) return customerRefresh;
-    }
   }
 
   if (typeof localStorage !== 'undefined') {
@@ -80,30 +96,28 @@ export const getActiveRefreshToken = () => {
  * Stores tokens into tab-isolated sessionStorage and role-scoped localStorage.
  */
 export const setActiveAuthTokens = (accessToken, refreshToken) => {
+  const path = typeof window !== 'undefined' && window.location ? window.location.pathname || '' : '';
+  let rolePrefix = '';
+  if (path.startsWith('/admin')) rolePrefix = 'admin_';
+  else if (path.startsWith('/cashier')) rolePrefix = 'vendor_';
+  else if (path.startsWith('/kitchen')) rolePrefix = 'kitchen_';
+  else if (path.startsWith('/customer')) rolePrefix = 'customer_';
+
   if (typeof sessionStorage !== 'undefined') {
     sessionStorage.setItem('token', accessToken);
     if (refreshToken) sessionStorage.setItem('refreshToken', refreshToken);
+    if (rolePrefix) {
+      sessionStorage.setItem(`${rolePrefix}token`, accessToken);
+      if (refreshToken) sessionStorage.setItem(`${rolePrefix}refreshToken`, refreshToken);
+    }
   }
 
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem('token', accessToken);
     if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
-
-    if (typeof window !== 'undefined' && window.location) {
-      const path = window.location.pathname || '';
-      if (path.startsWith('/cashier')) {
-        localStorage.setItem('vendor_token', accessToken);
-        if (refreshToken) localStorage.setItem('vendor_refreshToken', refreshToken);
-      } else if (path.startsWith('/kitchen')) {
-        localStorage.setItem('kitchen_token', accessToken);
-        if (refreshToken) localStorage.setItem('kitchen_refreshToken', refreshToken);
-      } else if (path.startsWith('/admin')) {
-        localStorage.setItem('admin_token', accessToken);
-        if (refreshToken) localStorage.setItem('admin_refreshToken', refreshToken);
-      } else if (path.startsWith('/customer')) {
-        localStorage.setItem('customer_token', accessToken);
-        if (refreshToken) localStorage.setItem('customer_refreshToken', refreshToken);
-      }
+    if (rolePrefix) {
+      localStorage.setItem(`${rolePrefix}token`, accessToken);
+      if (refreshToken) localStorage.setItem(`${rolePrefix}refreshToken`, refreshToken);
     }
   }
 };

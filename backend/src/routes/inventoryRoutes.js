@@ -5,7 +5,8 @@ const {
   addInventoryItem,
   restockItem,
   getForecast,
-  getInventoryAlerts
+  getInventoryAlerts,
+  recalculateInventoryForecasts,
 } = require('../controllers/inventoryController');
 const authMiddleware = require('../middleware/authMiddleware');
 const roleMiddleware = require('../middleware/roleMiddleware');
@@ -19,6 +20,7 @@ router.get('/', getInventoryItems);
 router.get('/logs', getInventoryLogs);
 router.get('/alerts', getInventoryAlerts);
 router.post('/', roleMiddleware(['ADMIN', 'VENDOR']), addInventoryItem);
+router.post('/recalculate-forecasts', roleMiddleware(['ADMIN', 'VENDOR']), recalculateInventoryForecasts);
 router.post('/:id/restock', roleMiddleware(['ADMIN', 'VENDOR']), restockItem);
 router.get('/:id/forecast', getForecast);
 

@@ -92,9 +92,41 @@ const CustomerCartPage = ({ user }) => {
   const [paymentMethod, setPaymentMethod] = useState(
     () => localStorage.getItem('customer_paymentMethod') || 'COD'
   );
+  const [paymentSettings, setPaymentSettings] = useState({ codEnabled: true, onlineEnabled: true });
   const [placingOrder, setPlacingOrder] = useState(false);
   const [activeOrder, setActiveOrder] = useState(null);
   const [checkoutDone, setCheckoutDone] = useState(false);
+
+  // ─── Fetch payment availability settings ──────────────────────────────────
+  useEffect(() => {
+    api.get('/payments/settings')
+      .then(res => {
+        setPaymentSettings(res.data);
+        if (res.data.codEnabled && !res.data.onlineEnabled) {
+          setPaymentMethod('COD');
+        } else if (!res.data.codEnabled && res.data.onlineEnabled) {
+          setPaymentMethod('Easypaisa');
+        }
+      })
+      .catch(err => console.warn('Payment settings fetch error:', err.message));
+  }, []);
+
+  // ─── Real-time payment settings listener ──────────────────────────────────
+  useEffect(() => {
+    const socket = getSocket();
+    if (socket) {
+      const handlePaymentSettingsUpdate = settings => {
+        setPaymentSettings(settings);
+        if (settings.codEnabled && !settings.onlineEnabled) {
+          setPaymentMethod('COD');
+        } else if (!settings.codEnabled && settings.onlineEnabled) {
+          setPaymentMethod('Easypaisa');
+        }
+      };
+      socket.on('paymentSettings:update', handlePaymentSettingsUpdate);
+      return () => socket.off('paymentSettings:update', handlePaymentSettingsUpdate);
+    }
+  }, []);
 
   // ─── Persist cart ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -357,7 +389,23 @@ const CustomerCartPage = ({ user }) => {
       setError('Please verify your email via OTP before placing an order.');
       return;
     }
-    if (paymentMethod === 'Easypaisa' || paymentMethod === 'JazzCash') {
+
+    const isOnline = paymentMethod === 'Easypaisa' || paymentMethod === 'JazzCash';
+
+    if (!paymentSettings.codEnabled && !paymentSettings.onlineEnabled) {
+      setError("Sorry, we're not accepting orders at the moment. The kitchen is currently closed. Please try again later.");
+      return;
+    }
+    if (isOnline && !paymentSettings.onlineEnabled) {
+      setError('Sorry, Online Payment is currently unavailable. Please choose Pay at Counter to continue.');
+      return;
+    }
+    if (!isOnline && !paymentSettings.codEnabled) {
+      setError('Sorry, Pay at Counter is currently unavailable. Please choose Online Payment to continue.');
+      return;
+    }
+
+    if (isOnline) {
       setShowOnlinePaymentModal(true);
       return;
     }
@@ -653,37 +701,75 @@ const CustomerCartPage = ({ user }) => {
               <div className="bg-white border border-[#E8E8F0] rounded-3xl p-6 shadow-sm space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-wider text-gray-400">Payment Option</h3>
                 
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setPaymentMethod('COD')}
-                    className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                      paymentMethod === 'COD'
-                        ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-600/10'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <Banknote className={`w-5 h-5 ${paymentMethod === 'COD' ? 'text-indigo-600' : 'text-gray-400'}`} />
-                    <div className="mt-3">
-                      <strong className="text-xs font-bold block text-gray-900">Pay at Counter</strong>
-                      <span className="text-[10px] text-gray-500">Cash on Delivery</span>
+                {!paymentSettings.codEnabled && !paymentSettings.onlineEnabled ? (
+                  <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs font-semibold flex items-center space-x-2.5 shadow-sm">
+                    <AlertCircle className="w-5 h-5 shrink-0 text-rose-500" />
+                    <div>
+                      <strong className="block font-bold">Kitchen Closed</strong>
+                      <span>Sorry, we're not accepting orders at the moment. The kitchen is currently closed. Please try again later.</span>
                     </div>
-                  </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        disabled={!paymentSettings.codEnabled}
+                        onClick={() => { if (paymentSettings.codEnabled) setPaymentMethod('COD'); }}
+                        className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                          !paymentSettings.codEnabled
+                            ? 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-200'
+                            : paymentMethod === 'COD'
+                            ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-600/10 cursor-pointer'
+                            : 'border-gray-200 hover:border-gray-300 cursor-pointer'
+                        }`}
+                      >
+                        <Banknote className={`w-5 h-5 ${paymentMethod === 'COD' && paymentSettings.codEnabled ? 'text-indigo-600' : 'text-gray-400'}`} />
+                        <div className="mt-3">
+                          <strong className="text-xs font-bold block text-gray-900">Pay at Counter</strong>
+                          <span className="text-[10px] text-gray-500">
+                            {paymentSettings.codEnabled ? 'Cash on Delivery' : 'Unavailable'}
+                          </span>
+                        </div>
+                      </button>
 
-                  <button
-                    onClick={() => setPaymentMethod('Easypaisa')}
-                    className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
-                      paymentMethod === 'Easypaisa'
-                        ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-600/10'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <Smartphone className={`w-5 h-5 ${paymentMethod === 'Easypaisa' ? 'text-indigo-600' : 'text-gray-400'}`} />
-                    <div className="mt-3">
-                      <strong className="text-xs font-bold block text-gray-900">Mobile Wallet</strong>
-                      <span className="text-[10px] text-gray-500">Easypaisa / JazzCash</span>
+                      <button
+                        type="button"
+                        disabled={!paymentSettings.onlineEnabled}
+                        onClick={() => { if (paymentSettings.onlineEnabled) setPaymentMethod('Easypaisa'); }}
+                        className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                          !paymentSettings.onlineEnabled
+                            ? 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-200'
+                            : paymentMethod !== 'COD'
+                            ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-600/10 cursor-pointer'
+                            : 'border-gray-200 hover:border-gray-300 cursor-pointer'
+                        }`}
+                      >
+                        <Smartphone className={`w-5 h-5 ${paymentMethod !== 'COD' && paymentSettings.onlineEnabled ? 'text-indigo-600' : 'text-gray-400'}`} />
+                        <div className="mt-3">
+                          <strong className="text-xs font-bold block text-gray-900">Online Payment</strong>
+                          <span className="text-[10px] text-gray-500">
+                            {paymentSettings.onlineEnabled ? 'Easypaisa / JazzCash' : 'Unavailable'}
+                          </span>
+                        </div>
+                      </button>
                     </div>
-                  </button>
-                </div>
+
+                    {!paymentSettings.codEnabled && paymentSettings.onlineEnabled && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-[11px] font-medium flex items-center space-x-2">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                        <span>Sorry, Pay at Counter is currently unavailable. Please choose Online Payment to continue.</span>
+                      </div>
+                    )}
+
+                    {paymentSettings.codEnabled && !paymentSettings.onlineEnabled && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-[11px] font-medium flex items-center space-x-2">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                        <span>Sorry, Online Payment is currently unavailable. Please choose Pay at Counter to continue.</span>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
 
               {/* Order Summary & Placement Button */}
@@ -707,7 +793,12 @@ const CustomerCartPage = ({ user }) => {
 
                 <button
                   onClick={handlePlaceOrder}
-                  disabled={placingOrder}
+                  disabled={
+                    placingOrder ||
+                    (!paymentSettings.codEnabled && !paymentSettings.onlineEnabled) ||
+                    (paymentMethod === 'COD' && !paymentSettings.codEnabled) ||
+                    (paymentMethod !== 'COD' && !paymentSettings.onlineEnabled)
+                  }
                   className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-extrabold text-xs rounded-2xl shadow-xl shadow-indigo-600/20 transition-all cursor-pointer flex items-center justify-center space-x-2"
                 >
                   {placingOrder ? (

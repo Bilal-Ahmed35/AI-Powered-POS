@@ -72,6 +72,13 @@ async function runRealtimeAuthSyncTests() {
     assert(orderRes.status === 201 && orderRes.data.order.id, `Order placed: #${orderRes.data.order.orderNumber}`);
     const orderId = orderRes.data.order.id;
 
+    // Verify payment so Kitchen can process order
+    await axios.put(
+      `${BASE_URL}/payments/${orderId}/verify`,
+      { approve: true },
+      { headers: { Authorization: `Bearer ${vendorToken}` } }
+    );
+
     // ------------------------------------------------------------------------
     // STEP 3: Vendor Dashboard receives realtime event & executes API calls
     // ------------------------------------------------------------------------
@@ -86,14 +93,6 @@ async function runRealtimeAuthSyncTests() {
       headers: { Authorization: `Bearer ${vendorToken}` },
     });
     assert(vendorAlertsRes.status === 200, 'Vendor GET /api/inventory/alerts returns 200 OK');
-
-    // Vendor marks order as PAID
-    const vendorPaidRes = await axios.put(
-      `${BASE_URL}/orders/${orderId}/status`,
-      { status: 'PAID', note: 'Cash collected by cashier' },
-      { headers: { Authorization: `Bearer ${vendorToken}` } }
-    );
-    assert(vendorPaidRes.status === 200 && vendorPaidRes.data.order.status === 'PAID', 'Vendor PUT /api/orders/:id/status (PAID) returns 200 OK');
 
     // ------------------------------------------------------------------------
     // STEP 4: Kitchen Dashboard receives realtime event & advances order

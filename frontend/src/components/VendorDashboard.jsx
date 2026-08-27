@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { getSocket } from '../services/socket';
-import { Check, X, ShieldAlert, ShoppingCart, RefreshCw, AlertCircle, Eye, ToggleLeft, ToggleRight, Plus, Edit, Trash2 } from 'lucide-react';
+import { Check, X, ShieldAlert, ShoppingCart, RefreshCw, AlertCircle, Eye, ToggleLeft, ToggleRight, Plus, Edit, Trash2, Banknote, Smartphone, Clock } from 'lucide-react';
 
 const VendorDashboard = ({ user, onLogout }) => {
   const [orders, setOrders] = useState([]);
@@ -9,7 +9,10 @@ const VendorDashboard = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('vendor_activeTab') || 'verification'); // 'verification', 'active', 'menu'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  
+
+  // Payment availability settings state
+  const [paymentSettings, setPaymentSettings] = useState({ codEnabled: true, onlineEnabled: true });
+
   // Modal viewer state
   const [selectedOrder, setSelectedOrder] = useState(null);
 
@@ -42,12 +45,11 @@ const VendorDashboard = ({ user, onLogout }) => {
   useEffect(() => {
     fetchOrders();
     fetchMenu();
+    fetchPaymentSettings();
 
     const socket = getSocket();
     if (socket) {
-      // Connect to vendor socket rooms
       socket.on('order:new', (newOrder) => {
-        console.log('Vendor received new order:', newOrder);
         setOrders((prev) => {
           const exists = prev.some(o => o.id === newOrder.id);
           if (exists) return prev.map(o => o.id === newOrder.id ? newOrder : o);
@@ -56,7 +58,6 @@ const VendorDashboard = ({ user, onLogout }) => {
       });
 
       socket.on('order:update', (updatedOrder) => {
-        console.log('Vendor received order update:', updatedOrder);
         setOrders((prev) => {
           const exists = prev.some(o => o.id === updatedOrder.id);
           if (exists) return prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o));
@@ -65,12 +66,15 @@ const VendorDashboard = ({ user, onLogout }) => {
       });
 
       socket.on('payment:verify', (updatedOrder) => {
-        console.log('Vendor received payment verify alert:', updatedOrder);
         setOrders((prev) => {
           const exists = prev.some(o => o.id === updatedOrder.id);
           if (exists) return prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o));
           return [updatedOrder, ...prev];
         });
+      });
+
+      socket.on('paymentSettings:update', (updatedSettings) => {
+        setPaymentSettings(updatedSettings);
       });
 
       socket.on('menu:update', () => {
@@ -87,6 +91,7 @@ const VendorDashboard = ({ user, onLogout }) => {
         socket.off('order:new');
         socket.off('order:update');
         socket.off('payment:verify');
+        socket.off('paymentSettings:update');
         socket.off('menu:update');
         socket.off('inventory:update');
       }
@@ -115,6 +120,27 @@ const VendorDashboard = ({ user, onLogout }) => {
     }
   };
 
+  const fetchPaymentSettings = async () => {
+    try {
+      const res = await api.get('/payments/settings');
+      setPaymentSettings(res.data);
+    } catch (e) {
+      console.warn('Fetch payment settings warning:', e.message);
+    }
+  };
+
+  const handleTogglePaymentSetting = async (key, newValue) => {
+    try {
+      const res = await api.put('/payments/settings', { [key]: newValue });
+      setPaymentSettings(res.data.settings);
+      const label = key === 'codEnabled' ? 'COD (Pay at Counter)' : 'Online Payment';
+      showToast(`${label} is now ${newValue ? 'OPEN' : 'CLOSED'}`);
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.error || 'Failed to update payment availability.');
+    }
+  };
+
   const handleVerifyPayment = async (orderId) => {
     setError('');
     try {
@@ -123,9 +149,25 @@ const VendorDashboard = ({ user, onLogout }) => {
       if (selectedOrder && selectedOrder.id === orderId) {
         setSelectedOrder(response.data.order);
       }
+      showToast(`Payment verified for order ${response.data.order.orderNumber || `#000${orderId}`}`);
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.error || 'Failed to verify payment.');
+    }
+  };
+
+  const handleRejectPayment = async (orderId) => {
+    setError('');
+    try {
+      const response = await api.put(`/payments/${orderId}/verify`, { approve: false, reason: 'Payment verification rejected by staff.' });
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? response.data.order : o)));
+      if (selectedOrder && selectedOrder.id === orderId) {
+        setSelectedOrder(response.data.order);
+      }
+      showToast(`Payment rejected for order ${response.data.order.orderNumber || `#000${orderId}`}`, 'error');
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.error || 'Failed to reject payment.');
     }
   };
 
@@ -137,6 +179,7 @@ const VendorDashboard = ({ user, onLogout }) => {
       if (selectedOrder && selectedOrder.id === orderId) {
         setSelectedOrder(response.data.order);
       }
+      showToast(`Order status updated to ${nextStatus}`);
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.error || 'Failed to update order status.');
@@ -201,36 +244,41 @@ const VendorDashboard = ({ user, onLogout }) => {
 
     try {
       if (showModal === 'add') {
-        await api.post('/menu', payload);
-        showToast('Menu item created successfully!');
+        const response = await api.post('/menu', payload);
+        setMenu((prev) => [response.data.item, ...prev]);
+        showToast(`Menu item "${payload.name}" added successfully!`);
       } else if (showModal === 'edit') {
-        await api.put(`/menu/${modalData.id}`, payload);
-        showToast('Menu item updated successfully!');
+        const response = await api.put(`/menu/${modalData.id}`, payload);
+        setMenu((prev) => prev.map((it) => (it.id === modalData.id ? response.data.item : it)));
+        showToast(`Menu item "${payload.name}" updated successfully!`);
       }
       setShowModal(false);
-      fetchMenu();
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.error || 'Failed to save menu item.');
     }
   };
 
-  const handleDeleteMenuItem = async (itemId) => {
-    setError('');
+  const handleDeleteMenuItem = async () => {
+    if (!deleteConfirmItem) return;
     try {
-      const response = await api.delete(`/menu/${itemId}`);
-      showToast(response.data.message || 'Menu item deleted successfully.');
+      await api.delete(`/menu/${deleteConfirmItem.id}`);
+      setMenu((prev) => prev.filter((it) => it.id !== deleteConfirmItem.id));
+      showToast(`Menu item "${deleteConfirmItem.name}" deleted successfully!`);
       setDeleteConfirmItem(null);
-      fetchMenu();
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.error || 'Failed to delete menu item.');
-      setDeleteConfirmItem(null);
     }
   };
 
-  // Filter orders
-  const verificationOrders = orders.filter((o) => o.status === 'PENDING' && (o.paymentTxId || o.paymentMethod === 'COD'));
+  // Filter orders for Payment Verification Tab (both COD & Online)
+  const verificationOrders = orders.filter(
+    (o) =>
+      ['PENDING', 'PAYMENT_PENDING'].includes(o.status) ||
+      ['UNPAID', 'PENDING_VERIFICATION'].includes(o.paymentStatus)
+  ).filter((o) => !['CANCELLED', 'COMPLETED', 'PAID', 'REFUNDED'].includes(o.status));
+
   const activeOrders = orders.filter((o) => ['PAID', 'PREPARING', 'READY'].includes(o.status));
 
   return (
@@ -258,7 +306,7 @@ const VendorDashboard = ({ user, onLogout }) => {
           
           <div className="flex items-center space-x-3 w-full md:w-auto">
             <button
-              onClick={fetchOrders}
+              onClick={() => { fetchOrders(); fetchPaymentSettings(); }}
               className="p-2.5 bg-[var(--card-bg)] border border-[var(--border-color)] hover:bg-[var(--bg-color)]/60 text-[var(--text-muted)] hover:text-[var(--text-main)] rounded-xl transition-all cursor-pointer"
               title="Refresh Dashboard Data"
             >
@@ -284,19 +332,90 @@ const VendorDashboard = ({ user, onLogout }) => {
               <Check className="w-4 h-4" />
               <span>{toastMessage.text}</span>
             </div>
-            <button onClick={() => setToastMessage(null)} className="text-xs font-bold opacity-60 hover:opacity-100">✕</button>
           </div>
         )}
 
+        {/* System Error Message */}
         {error && (
-          <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl text-xs font-semibold flex items-center space-x-2.5 animate-glow-pulse">
-            <AlertCircle className="w-4.5 h-4.5 shrink-0" />
+          <div className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-2xl text-xs font-bold flex items-center space-x-2 shadow-lg">
+            <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Tab Navigator */}
-        <div className="p-1 bg-[var(--card-bg)]/60 backdrop-blur-xl border border-[var(--border-color)] rounded-2xl inline-flex w-full md:w-auto transition-colors duration-300">
+        {/* ── Payment Method Control & Availability Section ────────────────── */}
+        <div className="bg-[var(--card-bg)]/40 backdrop-blur-xl border border-[var(--border-color)] rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h2 className="font-extrabold text-base text-[var(--text-main)] font-display flex items-center space-x-2">
+                <Banknote className="w-5 h-5 text-indigo-400" />
+                <span>Payment Method Control &amp; Availability</span>
+              </h2>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">Control payment method availability for customer checkout in real time.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            {/* COD Control Card */}
+            <div className="p-4 bg-[var(--bg-color)]/60 border border-[var(--border-color)] rounded-xl flex items-center justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-black text-[var(--text-main)]">Pay at Counter (COD)</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                    paymentSettings.codEnabled
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  }`}>
+                    {paymentSettings.codEnabled ? 'OPEN' : 'CLOSED'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--text-muted)]">Allow customers to pay cash at counter</p>
+              </div>
+
+              <button
+                onClick={() => handleTogglePaymentSetting('codEnabled', !paymentSettings.codEnabled)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  paymentSettings.codEnabled
+                    ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md'
+                }`}
+              >
+                {paymentSettings.codEnabled ? 'Close COD' : 'Open COD'}
+              </button>
+            </div>
+
+            {/* Online Payment Control Card */}
+            <div className="p-4 bg-[var(--bg-color)]/60 border border-[var(--border-color)] rounded-xl flex items-center justify-between">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-black text-[var(--text-main)]">Online Payment</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                    paymentSettings.onlineEnabled
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  }`}>
+                    {paymentSettings.onlineEnabled ? 'OPEN' : 'CLOSED'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[var(--text-muted)]">Easypaisa &amp; JazzCash mobile wallet</p>
+              </div>
+
+              <button
+                onClick={() => handleTogglePaymentSetting('onlineEnabled', !paymentSettings.onlineEnabled)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  paymentSettings.onlineEnabled
+                    ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md'
+                }`}
+              >
+                {paymentSettings.onlineEnabled ? 'Close Online' : 'Open Online'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Dashboard Navigation Tabs */}
+        <div className="bg-[var(--card-bg)]/40 backdrop-blur-xl border border-[var(--border-color)] p-1.5 rounded-2xl shadow-xl transition-colors duration-300">
           <div className="flex flex-col md:flex-row gap-1 w-full">
             {[
               { id: 'verification', label: 'Payment Verifications', count: verificationOrders.length },
@@ -345,42 +464,56 @@ const VendorDashboard = ({ user, onLogout }) => {
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
                       <div>
-                        <span className="text-[10px] text-[var(--text-muted)] font-mono tracking-wider">ORDER ID</span>
-                        <h4 className="font-extrabold text-[var(--text-main)] text-base mt-0.5 font-mono">#000{order.id}</h4>
+                        <span className="text-[10px] text-[var(--text-muted)] font-mono tracking-wider">ORDER NUMBER</span>
+                        <h4 className="font-extrabold text-[var(--text-main)] text-base mt-0.5 font-mono">{order.orderNumber || `#000${order.id}`}</h4>
                       </div>
                       <span className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold border uppercase ${
                         order.paymentMethod === 'COD'
                           ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
                           : 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20'
                       }`}>
-                        {order.paymentMethod}
+                        {order.paymentMethod || 'COD'}
                       </span>
                     </div>
 
-                    <div className="p-4 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)] space-y-2.5 font-sans">
-                      <div className="flex justify-between text-xs items-center">
+                    <div className="p-4 bg-[var(--bg-color)] rounded-xl border border-[var(--border-color)] space-y-2 font-sans text-xs">
+                      <div className="flex justify-between items-center">
                         <span className="text-[var(--text-muted)]">TxID Ref:</span>
-                        <strong className="text-[var(--text-main)] font-mono select-all bg-[var(--card-bg)] px-2 py-0.5 rounded border border-[var(--border-color)]">{order.paymentTxId || 'COD Order'}</strong>
+                        <strong className="text-[var(--text-main)] font-mono select-all bg-[var(--card-bg)] px-2 py-0.5 rounded border border-[var(--border-color)]">
+                          {order.paymentTxId || 'COD / N/A'}
+                        </strong>
                       </div>
-                      <div className="flex justify-between text-xs">
+                      <div className="flex justify-between">
                         <span className="text-[var(--text-muted)]">Customer:</span>
-                        <strong className="text-[var(--text-main)]">{order.user?.name || 'Guest'}</strong>
+                        <strong className="text-[var(--text-main)]">{order.user?.name || 'Guest'} ({order.user?.email || order.customerEmail || 'N/A'})</strong>
                       </div>
-                      <div className="flex justify-between text-xs">
+                      <div className="flex justify-between">
                         <span className="text-[var(--text-muted)]">Table Placement:</span>
-                        <strong className="text-[var(--text-main)]">{order.tableId || 'Takeaway'}</strong>
+                        <strong className="text-[var(--text-main)]">{order.tableNumber || order.tableId || 'Takeaway'}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[var(--text-muted)]">Payment Status:</span>
+                        <strong className="text-amber-400 font-bold uppercase text-[11px]">{order.paymentStatus}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[var(--text-muted)]">Order Status:</span>
+                        <strong className="text-indigo-400 font-bold uppercase text-[11px]">{order.status}</strong>
+                      </div>
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-[var(--text-muted)]">Payment Time:</span>
+                        <span className="text-[var(--text-muted)] font-mono">{new Date(order.createdAt).toLocaleTimeString()}</span>
                       </div>
                     </div>
 
                     <div className="text-sm font-extrabold text-indigo-400 flex justify-between items-center border-t border-[var(--border-color)] pt-3">
-                      <span className="text-[var(--text-muted)] font-medium">Subtotal Due:</span>
-                      <span className="text-lg text-[var(--text-main)] font-mono">${order.total.toFixed(2)}</span>
+                      <span className="text-[var(--text-muted)] font-medium">Total Amount Due:</span>
+                      <span className="text-lg text-[var(--text-main)] font-mono">Rs. {order.total.toFixed(2)}</span>
                     </div>
                   </div>
 
                   <div className="flex space-x-3 pt-2">
                     <button
-                      onClick={() => handleUpdateStatus(order.id, 'CANCELLED')}
+                      onClick={() => handleRejectPayment(order.id)}
                       className="flex-1 py-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center justify-center space-x-1.5"
                     >
                       <X className="w-4 h-4" />
@@ -391,7 +524,7 @@ const VendorDashboard = ({ user, onLogout }) => {
                       className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/10 border border-indigo-400/20 transition-all duration-200 cursor-pointer flex items-center justify-center space-x-1.5"
                     >
                       <Check className="w-4 h-4" />
-                      <span>Verify & Approve</span>
+                      <span>Verify &amp; Approve</span>
                     </button>
                   </div>
                 </div>
@@ -417,8 +550,8 @@ const VendorDashboard = ({ user, onLogout }) => {
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
                       <div>
-                        <span className="text-[10px] text-[var(--text-muted)] font-mono tracking-wider">ORDER ID</span>
-                        <h4 className="font-extrabold text-[var(--text-main)] text-base mt-0.5 font-mono">#000{order.id}</h4>
+                        <span className="text-[10px] text-[var(--text-muted)] font-mono tracking-wider">ORDER NUMBER</span>
+                        <h4 className="font-extrabold text-[var(--text-main)] text-base mt-0.5 font-mono">{order.orderNumber || `#000${order.id}`}</h4>
                       </div>
                       <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold border ${
                         order.status === 'PAID'
@@ -438,7 +571,7 @@ const VendorDashboard = ({ user, onLogout }) => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-[var(--text-muted)]">Location / Table:</span>
-                        <strong className="text-[var(--text-main)]">{order.tableId || 'Takeaway'}</strong>
+                        <strong className="text-[var(--text-main)]">{order.tableNumber || order.tableId || 'Takeaway'}</strong>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-[var(--text-muted)]">Order Quantity:</span>
@@ -449,29 +582,21 @@ const VendorDashboard = ({ user, onLogout }) => {
                     </div>
                   </div>
 
-                  <div className="flex space-x-2.5 pt-2 border-t border-[var(--border-color)]">
-                    <button
-                      onClick={() => setSelectedOrder(order)}
-                      className="p-3 bg-[var(--bg-color)] border border-[var(--border-color)] hover:bg-[var(--bg-color)]/60 text-[var(--text-muted)] hover:text-[var(--text-main)] rounded-xl text-xs transition-colors cursor-pointer"
-                      title="View Details"
-                    >
-                      <Eye className="w-4.5 h-4.5" />
-                    </button>
-                    
-                    {order.status === 'READY' ? (
+                  <div className="flex space-x-3 pt-2">
+                    {order.status === 'PAID' && (
+                      <button
+                        onClick={() => handleUpdateStatus(order.id, 'PREPARING')}
+                        className="w-full py-2.5 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Send to Kitchen →
+                      </button>
+                    )}
+                    {order.status === 'READY' && (
                       <button
                         onClick={() => handleUpdateStatus(order.id, 'COMPLETED')}
-                        className="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-650 hover:from-emerald-500 hover:to-teal-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-950/20 border border-emerald-500/20 cursor-pointer transition-colors"
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer"
                       >
-                        Complete Order
-                      </button>
-                    ) : (
-                      <button
-                        disabled
-                        className="flex-1 py-3 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] rounded-xl text-xs font-semibold flex items-center justify-center space-x-2"
-                      >
-                        <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-ping" />
-                        <span>Kitchen Preparing...</span>
+                        Mark Handed Over &amp; Complete
                       </button>
                     )}
                   </div>
@@ -482,401 +607,55 @@ const VendorDashboard = ({ user, onLogout }) => {
         )}
 
         {activeTab === 'menu' && (
-          <div className="bg-[var(--card-bg)]/40 backdrop-blur-xl border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-xl">
-            <div className="p-6 border-b border-[var(--border-color)] bg-[var(--card-bg)]/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
               <div>
-                <h3 className="font-extrabold text-[var(--text-main)] text-base font-display">Menu Item Management</h3>
-                <p className="text-xs text-[var(--text-muted)] mt-1">Configure stock quantities, item descriptions, availability and create new recipes.</p>
+                <h2 className="font-extrabold text-lg text-[var(--text-main)] font-display">Menu Catalog Availability</h2>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">Toggle item availability or update stock levels.</p>
               </div>
               <button
                 onClick={handleOpenAddModal}
-                className="px-4.5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center space-x-2 cursor-pointer shadow-lg shadow-indigo-600/10 border border-indigo-400/20"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer flex items-center space-x-1.5"
               >
                 <Plus className="w-4 h-4" />
-                <span>Add Menu Item</span>
+                <span>Add Item</span>
               </button>
             </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs text-[var(--text-main)]">
-                <thead>
-                  <tr className="bg-[var(--bg-color)] text-[var(--text-muted)] border-b border-[var(--border-color)] uppercase tracking-wider text-[9px] font-bold">
-                    <th className="p-4.5 font-semibold">Name & Details</th>
-                    <th className="p-4.5 font-semibold">Category</th>
-                    <th className="p-4.5 font-semibold">Type</th>
-                    <th className="p-4.5 font-semibold">Price</th>
-                    <th className="p-4.5 font-semibold">Stock Qty</th>
-                    <th className="p-4.5 font-semibold text-center">Active Status</th>
-                    <th className="p-4.5 font-semibold text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--border-color)]">
-                  {menu.map((item) => (
-                    <tr key={item.id} className="hover:bg-[var(--bg-color)]/20 transition-colors">
-                      <td className="p-4.5 font-medium text-[var(--text-main)] max-w-xs">
-                        <div className="flex items-center space-x-3">
-                          {item.imageUrl ? (
-                            <img
-                              src={item.imageUrl}
-                              alt={item.name}
-                              className="w-10 h-10 object-cover rounded-xl border border-[var(--border-color)] shrink-0 bg-[var(--card-bg)]"
-                              onError={(e) => { e.target.style.display = 'none'; }}
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-black shrink-0">
-                              {item.name.charAt(0)}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold tracking-tight truncate">{item.name}</p>
-                            <p className="text-[10px] text-[var(--text-muted)] truncate mt-0.5">{item.description || 'No description provided'}</p>
-                            <span className="text-[9px] text-indigo-400 font-mono">⏱️ ~{item.prepTime || 5} mins prep</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4.5">
-                        <span className="px-2.5 py-0.5 bg-indigo-500/5 border border-indigo-500/15 text-indigo-400 rounded-md font-semibold text-[10px]">
-                          {item.category}
-                        </span>
-                      </td>
-                      <td className="p-4.5">
-                        <span className="px-2.5 py-0.5 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] rounded-md uppercase font-mono text-[9px]">
-                          {item.type || 'food'}
-                        </span>
-                      </td>
-                      <td className="p-4.5 font-mono font-bold text-[var(--text-main)]">
-                        Rs. {item.price.toFixed(2)}
-                      </td>
-                      <td className="p-4.5">
-                        <span className={`font-bold ${item.stock <= 5 ? 'text-rose-400 animate-pulse font-extrabold' : 'text-[var(--text-main)]'}`}>
-                          {item.stock} units
-                        </span>
-                      </td>
-                      <td className="p-4.5 text-center">
-                        <div className="flex items-center justify-center space-x-2">
-                          <span className={`text-[10px] font-bold ${item.isActive ? 'text-emerald-400' : 'text-gray-500'}`}>
-                            {item.isActive ? 'Active' : 'Hidden'}
-                          </span>
-                          <button
-                            onClick={() => handleToggleMenu(item.id, item.isActive)}
-                            className="cursor-pointer text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors"
-                          >
-                            {item.isActive ? (
-                              <ToggleRight className="w-8 h-8 text-emerald-500" />
-                            ) : (
-                              <ToggleLeft className="w-8 h-8 text-gray-500" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                      <td className="p-4.5 text-right">
-                        <div className="flex justify-end items-center space-x-2">
-                          <button
-                            onClick={() => handleOpenEditModal(item)}
-                            className="p-2 bg-[var(--bg-color)] border border-[var(--border-color)] hover:bg-[var(--bg-color)]/60 text-[var(--text-muted)] hover:text-[var(--text-main)] rounded-lg transition-colors cursor-pointer"
-                            title="Edit Item Details"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirmItem(item)}
-                            className="p-2 bg-red-950/10 border border-red-900/20 hover:border-red-500/40 text-red-400 hover:text-red-300 rounded-lg transition-colors cursor-pointer"
-                            title="Delete Item"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {menu.map((item) => (
+                <div key={item.id} className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] rounded-2xl p-4 flex flex-col justify-between space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-bold text-sm text-[var(--text-main)]">{item.name}</h3>
+                      <span className="text-xs text-[var(--text-muted)] font-mono">Rs. {item.price.toFixed(2)}</span>
+                    </div>
+                    <button
+                      onClick={() => handleToggleMenu(item.id, item.isActive)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
+                        item.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                      }`}
+                    >
+                      {item.isActive ? 'Available' : 'Disabled'}
+                    </button>
+                  </div>
+                  <div className="flex justify-between text-xs text-[var(--text-muted)] border-t border-[var(--border-color)] pt-3">
+                    <span>Stock: <strong className="text-[var(--text-main)]">{item.stock}</strong></span>
+                    <div className="flex space-x-2">
+                      <button onClick={() => handleOpenEditModal(item)} className="p-1 text-indigo-400 hover:text-indigo-300">
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => setDeleteConfirmItem(item)} className="p-1 text-rose-400 hover:text-rose-300">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
       </div>
-
-      {/* View Order Modal - Receipt Invoice styling */}
-      {selectedOrder && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex justify-center items-center p-4 z-50 animate-fade-in">
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-[40px] pointer-events-none" />
-
-            <div className="flex justify-between items-start border-b border-[var(--border-color)] pb-4">
-              <div>
-                <span className="text-[10px] text-indigo-400 font-extrabold tracking-wider font-mono">ORDER RECEIPT</span>
-                <h3 className="font-extrabold text-[var(--text-main)] text-lg mt-0.5 font-mono">#000{selectedOrder.id}</h3>
-              </div>
-              <button
-                onClick={() => setSelectedOrder(null)}
-                className="p-1 text-[var(--text-muted)] hover:text-[var(--text-main)] rounded-lg transition-colors cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 font-sans text-xs text-[var(--text-main)]">
-              <div className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Placement:</span>
-                <strong className="text-[var(--text-main)]">{selectedOrder.tableId ? `Table ${selectedOrder.tableId}` : 'Takeaway / Delivery'}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Customer:</span>
-                <strong className="text-[var(--text-main)]">{selectedOrder.user?.name || 'Guest User'}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Status:</span>
-                <strong className="text-indigo-400 font-extrabold">{selectedOrder.status}</strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--text-muted)]">Method:</span>
-                <strong className="text-[var(--text-main)] font-mono">{selectedOrder.paymentMethod === 'COD' ? 'Pay Cash' : selectedOrder.paymentMethod}</strong>
-              </div>
-            </div>
-
-            {/* Simulated Receipt Items */}
-            <div className="border-t border-b border-dashed border-[var(--border-color)] py-4 my-2 max-h-48 overflow-y-auto space-y-3 scrollbar-none">
-              <span className="text-[10px] font-bold text-[var(--text-muted)] tracking-wider block uppercase">Ordered Items</span>
-              <div className="space-y-2.5">
-                {selectedOrder.orderItems?.map((item) => (
-                  <div key={item.id} className="flex justify-between text-xs items-center">
-                    <span className="text-[var(--text-main)] font-medium">
-                      {item.menuItem?.name} <span className="text-[var(--text-muted)] text-[10px] ml-1">× {item.quantity}</span>
-                    </span>
-                    <span className="text-[var(--text-main)] font-mono">${(item.price * item.quantity).toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center text-sm font-bold text-[var(--text-main)] border-t border-[var(--border-color)] pt-3">
-              <span className="text-[var(--text-muted)] font-medium">Total Paid:</span>
-              <span className="text-indigo-400 text-lg font-mono">${selectedOrder.total.toFixed(2)}</span>
-            </div>
-
-            <div className="pt-2">
-              <button
-                onClick={() => setSelectedOrder(null)}
-                className="w-full py-3 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] hover:text-indigo-500 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer"
-              >
-                Close Receipt
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add/Edit Menu Item Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex justify-center items-center p-4 z-50 animate-fade-in">
-          <form onSubmit={handleSubmitMenuItem} className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-[40px] pointer-events-none" />
-            
-            <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-4">
-              <h3 className="font-extrabold text-[var(--text-main)] text-base font-display">
-                {showModal === 'add' ? 'Create New Item' : 'Edit Menu Details'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowModal(false)}
-                className="p-1 text-[var(--text-muted)] hover:text-[var(--text-main)] rounded-lg transition-colors cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
-                    Item Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={modalData.name}
-                    onChange={(e) => setModalData({ ...modalData, name: e.target.value })}
-                    placeholder="e.g. Double Beef Cheeseburger"
-                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
-                    Price (USD / $)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={modalData.price}
-                    onChange={(e) => setModalData({ ...modalData, price: e.target.value })}
-                    placeholder="e.g. 5.99"
-                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)] font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
-                    Type
-                  </label>
-                  <select
-                    value={modalData.type}
-                    onChange={(e) => setModalData({ ...modalData, type: e.target.value })}
-                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] cursor-pointer"
-                  >
-                    <option value="food" className="bg-[var(--card-bg)] text-[var(--text-main)]">Food</option>
-                    <option value="drink" className="bg-[var(--card-bg)] text-[var(--text-main)]">Drink</option>
-                    <option value="dessert" className="bg-[var(--card-bg)] text-[var(--text-main)]">Dessert</option>
-                    <option value="sides" className="bg-[var(--card-bg)] text-[var(--text-main)]">Sides</option>
-                    <option value="other" className="bg-[var(--card-bg)] text-[var(--text-main)]">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
-                    Category
-                  </label>
-                  <select
-                    value={modalData.category}
-                    onChange={(e) => setModalData({ ...modalData, category: e.target.value })}
-                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] cursor-pointer"
-                  >
-                    <option value="Food" className="bg-[var(--card-bg)] text-[var(--text-main)]">Food</option>
-                    <option value="Sides" className="bg-[var(--card-bg)] text-[var(--text-main)]">Sides</option>
-                    <option value="Beverages" className="bg-[var(--card-bg)] text-[var(--text-main)]">Beverages</option>
-                    <option value="Desserts" className="bg-[var(--card-bg)] text-[var(--text-main)]">Desserts</option>
-                    <option value="Snacks" className="bg-[var(--card-bg)] text-[var(--text-main)]">Snacks</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
-                    Stock Level
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    value={modalData.stock}
-                    onChange={(e) => setModalData({ ...modalData, stock: e.target.value })}
-                    placeholder="50"
-                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)] font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
-                    Prep (Mins)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="60"
-                    value={modalData.prepTime}
-                    onChange={(e) => setModalData({ ...modalData, prepTime: e.target.value })}
-                    placeholder="5"
-                    className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)] font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
-                  Item Image URL (Optional)
-                </label>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="url"
-                    value={modalData.imageUrl}
-                    onChange={(e) => setModalData({ ...modalData, imageUrl: e.target.value })}
-                    placeholder="https://images.unsplash.com/... or direct image link"
-                    className="flex-1 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)]"
-                  />
-                  {modalData.imageUrl && (
-                    <img
-                      src={modalData.imageUrl}
-                      alt="Preview"
-                      className="w-10 h-10 object-cover rounded-xl border border-[var(--border-color)] bg-[var(--card-bg)] shrink-0"
-                      onError={(e) => { e.target.style.opacity = '0.3'; }}
-                    />
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-extrabold text-[var(--text-muted)] uppercase tracking-wider mb-1.5">
-                  Item Description
-                </label>
-                <textarea
-                  value={modalData.description}
-                  onChange={(e) => setModalData({ ...modalData, description: e.target.value })}
-                  placeholder="Detail menu item ingredients, serving portions, allergens, prep conditions..."
-                  rows={2}
-                  className="w-full bg-[var(--input-bg)] border border-[var(--input-border)] rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-indigo-500 text-[var(--text-main)] placeholder-[var(--text-muted)] resize-none font-sans"
-                />
-              </div>
-
-              <div className="flex items-center space-x-2.5 pt-1">
-                <input
-                  type="checkbox"
-                  id="modal_item_active"
-                  checked={modalData.isActive}
-                  onChange={(e) => setModalData({ ...modalData, isActive: e.target.checked })}
-                  className="w-4 h-4 rounded border-[var(--border-color)] text-indigo-600 focus:ring-indigo-500 bg-[var(--input-bg)] cursor-pointer"
-                />
-                <label htmlFor="modal_item_active" className="text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer select-none">
-                  Available for ordering (Publish Item)
-                </label>
-              </div>
-            </div>
-
-            <div className="flex space-x-3 pt-3 border-t border-[var(--border-color)]">
-              <button
-                type="button"
-                onClick={() => setShowModal(false)}
-                className="flex-1 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-main)] rounded-xl text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-650/15 border border-indigo-400/20 transition-colors cursor-pointer"
-              >
-                {showModal === 'add' ? 'Create Recipe' : 'Save Changes'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {deleteConfirmItem && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex justify-center items-center p-4 z-50 animate-fade-in">
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-center">
-            <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
-              <Trash2 className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="font-extrabold text-base text-[var(--text-main)] font-display">Delete Menu Item</h3>
-              <p className="text-xs text-[var(--text-muted)] mt-1">
-                Are you sure you want to remove <strong className="text-[var(--text-main)]">{deleteConfirmItem.name}</strong> from the active menu?
-              </p>
-            </div>
-            <div className="flex space-x-3 pt-2">
-              <button
-                onClick={() => setDeleteConfirmItem(null)}
-                className="flex-1 py-2.5 bg-[var(--bg-color)] border border-[var(--border-color)] text-[var(--text-main)] rounded-xl text-xs font-bold cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDeleteMenuItem(deleteConfirmItem.id)}
-                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer"
-              >
-                Yes, Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

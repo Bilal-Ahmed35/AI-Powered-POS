@@ -16,7 +16,7 @@ const { logAudit } = require('../middleware/auditMiddleware');
  */
 const generateOrderNumber = () => {
   const year = new Date().getFullYear();
-  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  const randomSuffix = Math.floor(100000 + Math.random() * 900000);
   return `ORD-${year}-${randomSuffix}`;
 };
 
@@ -42,6 +42,29 @@ const createOrder = async (req, res) => {
   }
 
   try {
+    // Verify database payment method availability settings
+    let settings = await prisma.paymentSetting.findFirst();
+    if (!settings) {
+      settings = await prisma.paymentSetting.create({
+        data: { codEnabled: true, onlineEnabled: true },
+      });
+    }
+
+    const requestedMethod = String(paymentMethod || 'COD').toUpperCase();
+    const isOnlineMethod = requestedMethod !== 'COD';
+
+    if (!settings.codEnabled && !settings.onlineEnabled) {
+      return res.status(400).json({ error: "Sorry, we're not accepting orders at the moment. The kitchen is currently closed. Please try again later." });
+    }
+
+    if (!isOnlineMethod && !settings.codEnabled) {
+      return res.status(400).json({ error: "Sorry, Pay at Counter is currently unavailable. Please choose Online Payment to continue." });
+    }
+
+    if (isOnlineMethod && !settings.onlineEnabled) {
+      return res.status(400).json({ error: "Sorry, Online Payment is currently unavailable. Please choose Pay at Counter to continue." });
+    }
+
     let resolvedTableId = null;
     let resolvedTableNumber = 'Takeaway';
     let resolvedBranchId = 1;

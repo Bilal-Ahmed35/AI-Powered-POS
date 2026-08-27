@@ -113,7 +113,7 @@ const AdminDashboard = ({ user, onLogout }) => {
     if (socket) {
       const handleRealtimeSync = () => {
         if (user && user.role === 'ADMIN') {
-          fetchDashboardData();
+          fetchLightData();
           fetchAdminOrders();
           fetchTablesList();
         }
@@ -134,6 +134,21 @@ const AdminDashboard = ({ user, onLogout }) => {
       };
     }
   }, [user, period]);
+
+  const fetchLightData = async () => {
+    try {
+      const [statsRes, invRes, logsRes] = await Promise.all([
+        api.get(`/admin/stats?period=${period}`),
+        api.get('/inventory'),
+        api.get('/inventory/logs'),
+      ]);
+      setStats(statsRes.data);
+      setInventory(invRes.data.items || []);
+      setLogs(logsRes.data.logs || []);
+    } catch (err) {
+      console.error('Fetch light data error:', err);
+    }
+  };
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -159,6 +174,22 @@ const AdminDashboard = ({ user, onLogout }) => {
       setError('Failed to fetch dashboard records.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRecalculateForecasts = async () => {
+    setForecastingLoading(true);
+    try {
+      await api.post('/inventory/recalculate-forecasts');
+      const alertsRes = await api.get('/inventory/alerts');
+      setAlerts(alertsRes.data.alerts || []);
+      setAlertsContext(alertsRes.data.context || null);
+      showToast('AI Demand forecasts recalculated!');
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to recalculate forecasts', 'error');
+    } finally {
+      setForecastingLoading(false);
     }
   };
 
@@ -204,6 +235,7 @@ const AdminDashboard = ({ user, onLogout }) => {
   };
 
   const fetchAuditLogs = async () => {
+    if (!user || user.role !== 'ADMIN') return;
     setAuditLoading(true);
     try {
       const params = auditFilterAction ? `?action=${auditFilterAction}` : '';
@@ -524,10 +556,21 @@ const AdminDashboard = ({ user, onLogout }) => {
 
               {/* Stock Reorder Advice */}
               <div className="bg-[var(--card-bg)]/40 border border-[var(--border-color)] p-6 rounded-2xl space-y-4">
-                <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
-                  <BrainCircuit className="w-4 h-4 text-indigo-400" />
-                  <span>AI Inventory Recommendations</span>
-                </h3>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-black text-[var(--text-main)] flex items-center space-x-2">
+                    <BrainCircuit className="w-4 h-4 text-indigo-400" />
+                    <span>AI Inventory Recommendations</span>
+                  </h3>
+                  <button
+                    onClick={handleRecalculateForecasts}
+                    disabled={forecastingLoading}
+                    className="px-2.5 py-1 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center space-x-1"
+                    title="Force recalculate fresh AI demand forecasts"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${forecastingLoading ? 'animate-spin' : ''}`} />
+                    <span>{forecastingLoading ? 'Calculating...' : 'Recalculate AI'}</span>
+                  </button>
+                </div>
                 <div className="divide-y divide-[var(--border-color)]">
                   {stats.stockRecommendations?.length === 0 ? (
                     <p className="text-xs text-[var(--text-muted)] py-4">All inventory stock levels are healthy.</p>

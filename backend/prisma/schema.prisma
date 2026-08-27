@@ -191,12 +191,13 @@ model ETAPrediction {
 
 model DemandForecast {
   id           Int      @id @default(autoincrement())
-  menuItemName String
+  menuItemName String   @unique
   forecastDate DateTime
   predictedQty Float
   confidence   Float?
   features     String?
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model InventoryItem {
@@ -262,3 +263,11 @@ model OrderStatusHistory {
   note            String?
   createdAt       DateTime @default(now())
 }
+
+model PaymentSetting {
+  id            Int      @id @default(autoincrement())
+  codEnabled    Boolean  @default(true)
+  onlineEnabled Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+}
+

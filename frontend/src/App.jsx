@@ -16,7 +16,8 @@ function App() {
   const location = useLocation();
 
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
-  
+  const [authLoading, setAuthLoading] = useState(false);
+
   const [user, setUser] = useState(() => {
     const path = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
     let roleKey = '';
@@ -26,18 +27,24 @@ function App() {
     else if (path.startsWith('/customer')) roleKey = 'customer_';
 
     const savedUser =
+      (roleKey && typeof localStorage !== 'undefined' && localStorage.getItem(`${roleKey}user`)) ||
       (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('user')) ||
-      (typeof localStorage !== 'undefined' && localStorage.getItem(`${roleKey}user`)) ||
       (typeof localStorage !== 'undefined' && localStorage.getItem('user'));
 
     const savedToken =
+      (roleKey && typeof localStorage !== 'undefined' && localStorage.getItem(`${roleKey}token`)) ||
       (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('token')) ||
-      (typeof localStorage !== 'undefined' && localStorage.getItem(`${roleKey}token`)) ||
       (typeof localStorage !== 'undefined' && localStorage.getItem('token'));
 
     if (savedUser && savedToken) {
       try {
-        return JSON.parse(savedUser);
+        const u = JSON.parse(savedUser);
+        if (roleKey) {
+          const expectedRole = roleKey.replace('_', '').toUpperCase();
+          if (u.role === expectedRole) return u;
+        } else {
+          return u;
+        }
       } catch (e) {
         console.error('Failed to parse saved user:', e);
       }
@@ -72,7 +79,10 @@ function App() {
     else if (path.startsWith('/kitchen')) requiredRole = 'KITCHEN';
 
     if (requiredRole && user.role !== requiredRole) {
-      autoAuthenticateRole(requiredRole);
+      setAuthLoading(true);
+      autoAuthenticateRole(requiredRole).finally(() => {
+        setAuthLoading(false);
+      });
     }
   }, [location.pathname, user.role]);
 
@@ -223,15 +233,45 @@ function App() {
           {/* Role-Protected Staff Dashboards */}
           <Route
             path="/admin/*"
-            element={user.role === 'ADMIN' ? <AdminDashboardPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
+            element={
+              authLoading ? (
+                <div className="min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] flex items-center justify-center text-xs font-bold p-8">
+                  Authenticating Admin Workspace...
+                </div>
+              ) : user.role === 'ADMIN' ? (
+                <AdminDashboardPage user={user} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
           />
           <Route
             path="/cashier/*"
-            element={user.role === 'VENDOR' ? <CashierPOSPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
+            element={
+              authLoading ? (
+                <div className="min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] flex items-center justify-center text-xs font-bold p-8">
+                  Authenticating Cashier Workspace...
+                </div>
+              ) : user.role === 'VENDOR' ? (
+                <CashierPOSPage user={user} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
           />
           <Route
             path="/kitchen/*"
-            element={user.role === 'KITCHEN' ? <KitchenBoardPage user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
+            element={
+              authLoading ? (
+                <div className="min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] flex items-center justify-center text-xs font-bold p-8">
+                  Authenticating Kitchen Workspace...
+                </div>
+              ) : user.role === 'KITCHEN' ? (
+                <KitchenBoardPage user={user} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
           />
 
           <Route path="*" element={<Navigate to="/" replace />} />

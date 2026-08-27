@@ -4,6 +4,90 @@ const { sendPaymentConfirmedEmail, sendOrderCancellationEmail } = require('../se
 const { logAudit } = require('../middleware/auditMiddleware');
 
 /**
+ * Get current Payment Availability Settings (COD & Online)
+ */
+const getPaymentSettings = async (req, res) => {
+  try {
+    let settings = await prisma.paymentSetting.findFirst();
+    if (!settings) {
+      settings = await prisma.paymentSetting.create({
+        data: { codEnabled: true, onlineEnabled: true },
+      });
+    }
+
+    return res.json({
+      codEnabled: settings.codEnabled,
+      onlineEnabled: settings.onlineEnabled,
+      updatedAt: settings.updatedAt,
+    });
+  } catch (error) {
+    console.error('Get payment settings error:', error);
+    return res.status(500).json({ error: 'Failed to fetch payment availability settings.' });
+  }
+};
+
+/**
+ * Update Payment Availability Settings (Admin & Vendor only)
+ */
+const updatePaymentSettings = async (req, res) => {
+  const { codEnabled, onlineEnabled } = req.body;
+  const staffUserId = req.user?.id;
+
+  try {
+    let settings = await prisma.paymentSetting.findFirst();
+    const updateData = {};
+    if (typeof codEnabled === 'boolean') updateData.codEnabled = codEnabled;
+    if (typeof onlineEnabled === 'boolean') updateData.onlineEnabled = onlineEnabled;
+
+    const oldVal = settings ? { codEnabled: settings.codEnabled, onlineEnabled: settings.onlineEnabled } : null;
+
+    if (!settings) {
+      settings = await prisma.paymentSetting.create({
+        data: {
+          codEnabled: typeof codEnabled === 'boolean' ? codEnabled : true,
+          onlineEnabled: typeof onlineEnabled === 'boolean' ? onlineEnabled : true,
+        },
+      });
+    } else {
+      settings = await prisma.paymentSetting.update({
+        where: { id: settings.id },
+        data: updateData,
+      });
+    }
+
+    const payload = {
+      codEnabled: settings.codEnabled,
+      onlineEnabled: settings.onlineEnabled,
+      updatedAt: settings.updatedAt,
+    };
+
+    // Realtime Socket broadcast to all connected clients (customers, vendors, admin)
+    const { io } = require('../sockets/socket');
+    if (io) {
+      io.emit('paymentSettings:update', payload);
+    }
+
+    await logAudit({
+      userId: staffUserId,
+      action: 'PAYMENT_SETTINGS_UPDATE',
+      entity: 'PaymentSetting',
+      entityId: String(settings.id),
+      oldValue: oldVal,
+      newValue: payload,
+      req,
+    });
+
+    return res.json({
+      message: 'Payment availability settings updated successfully.',
+      settings: payload,
+    });
+  } catch (error) {
+    console.error('Update payment settings error:', error);
+    return res.status(500).json({ error: 'Failed to update payment availability settings.' });
+  }
+};
+
+/**
  * Submit online wallet transaction ID for verification
  */
 const submitTransactionId = async (req, res) => {
@@ -235,6 +319,8 @@ const verifyTransaction = async (req, res) => {
 };
 
 module.exports = {
+  getPaymentSettings,
+  updatePaymentSettings,
   submitTransactionId,
   verifyTransaction,
 };
