@@ -140,11 +140,65 @@ const generateMenuQR = async (req, res) => {
   }
 };
 
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Upload Menu Item Image (Saves file to /uploads and returns web URL)
+ */
+const uploadImage = async (req, res) => {
+  const { imageBase64 } = req.body;
+
+  if (!imageBase64) {
+    return res.status(400).json({ error: 'No image data provided for upload.' });
+  }
+
+  try {
+    const matches = imageBase64.match(/^data:(image\/(jpeg|png|webp|jpg));base64,(.+)$/i);
+    if (!matches) {
+      return res.status(400).json({
+        error: 'Invalid image format. Only JPG, JPEG, PNG, and WEBP formats are supported.',
+      });
+    }
+
+    const mimeType = matches[1].toLowerCase();
+    const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg';
+    const base64Data = matches[3];
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(400).json({
+        error: 'File size exceeds maximum allowed limit of 5MB.',
+      });
+    }
+
+    const uploadsDir = path.join(__dirname, '../../uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const uniqueName = `menu_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    const filePath = path.join(uploadsDir, uniqueName);
+
+    fs.writeFileSync(filePath, buffer);
+
+    const imageUrl = `/uploads/${uniqueName}`;
+    return res.json({
+      message: 'Image uploaded successfully.',
+      imageUrl,
+    });
+  } catch (error) {
+    console.error('Image upload error:', error);
+    return res.status(500).json({ error: 'Failed to process and store image.' });
+  }
+};
+
 module.exports = {
   getAllItems,
   getItemById,
   createItem,
   updateItem,
   deleteItem,
-  generateMenuQR
+  generateMenuQR,
+  uploadImage,
 };

@@ -18,6 +18,9 @@ import {
   User,
   KeyRound,
   ShieldCheck,
+  Flame,
+  Plus,
+  Minus,
 } from 'lucide-react';
 import FAQModal from './FAQModal';
 
@@ -39,7 +42,6 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
   const [category, setCategory] = useState(() => localStorage.getItem('customer_category') || 'All');
   const [activeOrder, setActiveOrder] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [favorites, setFavorites] = useState({});
   const [showFAQ, setShowFAQ] = useState(false);
   const [error, setError] = useState('');
 
@@ -90,16 +92,6 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
       try {
         const u = JSON.parse(saved);
         if (!u.isGuest) return u.name;
-      } catch {}
-    }
-    return '';
-  });
-  const [guestEmail] = useState(() => {
-    const saved = localStorage.getItem('user');
-    if (saved) {
-      try {
-        const u = JSON.parse(saved);
-        if (!u.isGuest) return u.email;
       } catch {}
     }
     return '';
@@ -178,7 +170,6 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
             localStorage.setItem('customer_tableToken', cleanRouteToken);
             setTableError('');
 
-            // Verify if this session is already customer-linked
             const verifiedSessionId = localStorage.getItem('customer_verifiedSessionId');
             if (s.customerId && verifiedSessionId === s.id) {
               setIsSessionVerified(true);
@@ -249,12 +240,10 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
         localStorage.setItem('customer_tableToken', pendingTableToken);
         localStorage.removeItem('customer_verifiedSessionId');
 
-        // Fresh session on new table requires OTP verification
         setIsSessionVerified(false);
         setOtpSent(false);
         setOtpCode('');
 
-        // Reset cart for the new table session
         setCart({});
         localStorage.removeItem('customer_cart');
         setActiveOrder(null);
@@ -520,22 +509,13 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
     }
   };
 
-  const clearCart = async () => {
-    setCart({});
-    if (sessionId) {
-      try {
-        await api.delete(`/cart/${sessionId}`);
-      } catch (err) {
-        console.warn('Backend cart clear warning:', err.message);
-      }
-    }
-  };
-
   const totalCartQuantity = Object.values(cart).reduce((sum, item) => sum + item.quantity, 0);
+  const totalCartPrice = Object.values(cart).reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-  // Categories list
-  const dynamicCategories = Array.from(new Set(menu.map((i) => i.category || 'Food')));
-  const combinedCategories = ['All', ...dynamicCategories.filter((c) => c !== 'All')];
+  // Default Categories List
+  const defaultCategories = ['All', 'Lunch', 'Breakfast', 'Fast Food', 'Refreshment'];
+  const dynamicCategories = Array.from(new Set(menu.map((i) => i.category).filter(Boolean)));
+  const combinedCategories = Array.from(new Set([...defaultCategories, ...dynamicCategories]));
 
   // Filtering
   const filteredMenu = menu.filter((item) => {
@@ -549,20 +529,24 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
   const heroFoodImage = 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800&auto=format&fit=crop&q=80';
 
   return (
-    <div className="min-h-screen bg-[#F8F9FD] text-[#17172B] flex flex-col font-sans">
-      {/* ── Top Header ────────────────────────────────────────────────────────── */}
-      <header className="bg-white border-b border-[#E8E8F0] px-4 sm:px-6 lg:px-8 py-3.5 flex justify-between items-center z-30 sticky top-0 shadow-sm backdrop-blur-md bg-white/95">
+    <div className="min-h-screen bg-[#F7F8FC] text-[#171923] flex flex-col font-sans selection:bg-[#5B45F5]/20">
+      {/* ── Top Application Header ─────────────────────────────────────────────── */}
+      <header className="bg-white/90 backdrop-blur-md border-b border-[#E7E8EF] px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center z-30 sticky top-0 shadow-sm transition-all">
         <div className="flex items-center space-x-3 sm:space-x-4">
-          <div className="flex items-center space-x-2">
-            <span className="text-xl sm:text-2xl">🍽️</span>
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#5B45F5] to-[#7C3AED] flex items-center justify-center text-white text-lg font-black shadow-md shadow-[#5B45F5]/20">
+              🍽️
+            </div>
             <div>
-              <h2 className="text-sm sm:text-base font-black tracking-tight text-[#17172B] font-display flex items-center space-x-1.5">
-                <span>SWIPEBITE</span>
-                <span className="text-[10px] bg-indigo-50 text-[#5B3DF5] px-2 py-0.5 rounded-full font-bold uppercase">
+              <div className="flex items-center space-x-2">
+                <h2 className="text-base sm:text-lg font-black tracking-tight text-[#171923] font-display">
+                  SWIPEBITE
+                </h2>
+                <span className="text-[11px] bg-[#5B45F5]/10 text-[#5B45F5] border border-[#5B45F5]/20 px-2.5 py-0.5 rounded-full font-extrabold uppercase">
                   {tableId}
                 </span>
-              </h2>
-              <div className="flex items-center space-x-2 text-[10px] text-[#62627A]">
+              </div>
+              <div className="flex items-center space-x-2 text-[11px] text-[#6B7280] font-medium">
                 <span>Scan Time: {scanTime}</span>
                 <span>•</span>
                 <span>Welcome, {authName || guestName || 'Customer'}</span>
@@ -574,21 +558,22 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
         <div className="flex items-center space-x-2 sm:space-x-3">
           <button
             onClick={() => setShowFAQ(true)}
-            className="p-2 sm:px-3 sm:py-2 text-xs font-bold text-[#62627A] hover:text-[#5B3DF5] hover:bg-indigo-50/50 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer"
+            className="p-2 sm:px-3 sm:py-2 text-xs font-bold text-[#6B7280] hover:text-[#5B45F5] hover:bg-[#5B45F5]/5 rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer"
             title="Help & FAQ"
           >
-            <HelpCircle className="w-4 h-4" />
+            <HelpCircle className="w-4 h-4 text-[#5B45F5]" />
             <span className="hidden sm:inline">Help</span>
           </button>
 
+          {/* Cart Header Button */}
           <button
             onClick={() => navigate('/customer/cart')}
-            className="relative px-3.5 sm:px-4 py-2 sm:py-2.5 bg-[#5B3DF5] hover:bg-indigo-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-500/20 flex items-center space-x-2 cursor-pointer"
+            className="relative px-4 py-2 sm:py-2.5 bg-[#5B45F5] hover:bg-[#4C38E8] active:scale-95 text-white rounded-2xl text-xs font-bold transition-all shadow-md shadow-[#5B45F5]/25 flex items-center space-x-2 cursor-pointer"
           >
             <ShoppingBag className="w-4 h-4" />
-            <span>Cart</span>
+            <span className="hidden sm:inline">Cart</span>
             {totalCartQuantity > 0 && (
-              <span className="bg-white text-[#5B3DF5] w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px] shadow-sm animate-scale-up">
+              <span className="bg-white text-[#5B45F5] w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px] shadow-sm animate-scale-up">
                 {totalCartQuantity}
               </span>
             )}
@@ -601,16 +586,16 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
 
       {/* Table Switching Confirmation Modal */}
       {showTableSwitchModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-gray-100 space-y-5 animate-in fade-in zoom-in duration-200">
-            <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto">
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-gray-100 space-y-5 animate-scale-up">
+            <div className="w-12 h-12 bg-indigo-50 text-[#5B45F5] rounded-2xl flex items-center justify-center mx-auto">
               <RotateCcw className="w-6 h-6" />
             </div>
             <div className="text-center space-y-2">
               <h3 className="text-lg font-black text-gray-900">Switch Dining Table?</h3>
               <p className="text-xs text-gray-500 leading-relaxed">
                 You have an active session on <strong className="text-gray-800">{tableId}</strong>.
-                Would you like to switch to <strong className="text-indigo-600">{pendingTableNumber}</strong>?
+                Would you like to switch to <strong className="text-[#5B45F5]">{pendingTableNumber}</strong>?
                 A fresh dining session and cart will be started for {pendingTableNumber}.
               </p>
             </div>
@@ -623,7 +608,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
               </button>
               <button
                 onClick={handleConfirmTableSwitch}
-                className="py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all shadow-md cursor-pointer"
+                className="py-3 bg-[#5B45F5] hover:bg-[#4C38E8] text-white font-bold text-xs rounded-xl transition-all shadow-md cursor-pointer"
               >
                 Start New {pendingTableNumber} Session
               </button>
@@ -637,7 +622,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
 
         {/* Table QR Error */}
         {tableError && (
-          <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-600 rounded-2xl text-xs font-semibold flex items-center space-x-2.5 shadow-sm">
+          <div className="p-4 bg-rose-50 border border-rose-200 text-rose-600 rounded-2xl text-xs font-semibold flex items-center space-x-2.5 shadow-sm">
             <AlertCircle className="w-5 h-5 shrink-0" />
             <span>{tableError}</span>
           </div>
@@ -645,7 +630,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
 
         {/* System Error */}
         {error && !tableError && (
-          <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-600 rounded-2xl text-xs font-semibold flex items-center space-x-2.5 shadow-sm">
+          <div className="p-4 bg-rose-50 border border-rose-200 text-rose-600 rounded-2xl text-xs font-semibold flex items-center space-x-2.5 shadow-sm">
             <AlertCircle className="w-5 h-5 shrink-0" />
             <span>{error}</span>
           </div>
@@ -653,23 +638,23 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
 
         {/* ── EMAIL + OTP VERIFICATION VIEW (Required before ordering) ────────── */}
         {!isSessionVerified ? (
-          <div className="max-w-md mx-auto my-8 bg-white border border-[#E8E8F0] rounded-[32px] p-6 sm:p-8 shadow-2xl text-center space-y-6 animate-in fade-in zoom-in duration-300">
-            <div className="w-16 h-16 bg-indigo-50 text-[#5B3DF5] rounded-3xl flex items-center justify-center mx-auto ring-8 ring-indigo-50/50">
+          <div className="max-w-md mx-auto my-8 bg-white border border-[#E7E8EF] rounded-[32px] p-6 sm:p-8 shadow-2xl text-center space-y-6 animate-fade-in">
+            <div className="w-16 h-16 bg-[#5B45F5]/10 text-[#5B45F5] rounded-3xl flex items-center justify-center mx-auto ring-8 ring-[#5B45F5]/5">
               <ShieldCheck className="w-8 h-8" />
             </div>
 
             <div>
-              <span className="px-3 py-1 bg-indigo-50 text-[#5B3DF5] rounded-full text-[10px] font-black uppercase tracking-wider">
+              <span className="px-3 py-1 bg-[#5B45F5]/10 text-[#5B45F5] rounded-full text-[10px] font-black uppercase tracking-wider">
                 {tableId} • Smart Dining Session
               </span>
-              <h2 className="text-2xl font-black text-[#17172B] mt-2">Welcome to {tableId}</h2>
-              <p className="text-xs text-[#62627A] mt-1.5 leading-relaxed">
+              <h2 className="text-2xl font-black text-[#171923] mt-2">Welcome to {tableId}</h2>
+              <p className="text-xs text-[#6B7280] mt-1.5 leading-relaxed">
                 Please verify your email address to unlock the menu and place your order.
               </p>
             </div>
 
             {otpError && (
-              <div className="p-3.5 bg-red-50 border border-red-200 text-red-600 rounded-2xl text-xs font-bold flex items-center space-x-2 text-left animate-shake">
+              <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-600 rounded-2xl text-xs font-bold flex items-center space-x-2 text-left">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{otpError}</span>
               </div>
@@ -685,21 +670,21 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
             {!otpSent ? (
               <form onSubmit={handleSendOtp} className="space-y-4 text-left">
                 <div>
-                  <label className="text-[11px] font-bold text-[#17172B] block mb-1">Your Full Name</label>
+                  <label className="text-[11px] font-bold text-[#171923] block mb-1">Your Full Name</label>
                   <div className="relative">
                     <input
                       type="text"
                       value={authName}
                       onChange={(e) => setAuthName(e.target.value)}
                       placeholder="e.g. John Doe"
-                      className="w-full bg-[#F8F9FD] border border-[#E8E8F0] rounded-xl px-4 py-3 text-xs text-[#17172B] focus:outline-none focus:border-[#5B3DF5]"
+                      className="w-full bg-[#F7F8FC] border border-[#E7E8EF] rounded-xl px-4 py-3 text-xs text-[#171923] focus:outline-none focus:border-[#5B45F5] focus:bg-white transition-all"
                     />
-                    <User className="w-4 h-4 text-[#62627A] absolute right-3.5 top-3.5" />
+                    <User className="w-4 h-4 text-[#6B7280] absolute right-3.5 top-3.5" />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-[#17172B] block mb-1">Email Address (for Receipt & OTP)</label>
+                  <label className="text-[11px] font-bold text-[#171923] block mb-1">Email Address (for Receipt & OTP)</label>
                   <div className="relative">
                     <input
                       type="email"
@@ -707,16 +692,16 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
                       placeholder="name@university.edu"
-                      className="w-full bg-[#F8F9FD] border border-[#E8E8F0] rounded-xl px-4 py-3 text-xs text-[#17172B] focus:outline-none focus:border-[#5B3DF5]"
+                      className="w-full bg-[#F7F8FC] border border-[#E7E8EF] rounded-xl px-4 py-3 text-xs text-[#171923] focus:outline-none focus:border-[#5B45F5] focus:bg-white transition-all"
                     />
-                    <Mail className="w-4 h-4 text-[#62627A] absolute right-3.5 top-3.5" />
+                    <Mail className="w-4 h-4 text-[#6B7280] absolute right-3.5 top-3.5" />
                   </div>
                 </div>
 
                 <button
                   type="submit"
                   disabled={otpLoading}
-                  className="w-full py-3.5 bg-[#5B3DF5] hover:bg-indigo-600 text-white font-black text-xs rounded-xl shadow-lg shadow-indigo-500/20 transition-all cursor-pointer flex items-center justify-center space-x-2"
+                  className="w-full py-3.5 bg-[#5B45F5] hover:bg-[#4C38E8] active:scale-[0.98] text-white font-black text-xs rounded-xl shadow-lg shadow-[#5B45F5]/25 transition-all cursor-pointer flex items-center justify-center space-x-2"
                 >
                   {otpLoading ? (
                     <span>Sending Code...</span>
@@ -732,8 +717,8 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
               <form onSubmit={handleVerifyOtp} className="space-y-4 text-left">
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-[11px] font-bold text-[#17172B]">Enter 6-Digit Code</label>
-                    <span className="text-[10px] text-[#62627A] font-mono">{authEmail}</span>
+                    <label className="text-[11px] font-bold text-[#171923]">Enter 6-Digit Code</label>
+                    <span className="text-[10px] text-[#6B7280] font-mono">{authEmail}</span>
                   </div>
                   <div className="relative">
                     <input
@@ -743,16 +728,16 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                       value={otpCode}
                       onChange={(e) => setOtpCode(e.target.value)}
                       placeholder="••••••"
-                      className="w-full text-center tracking-[8px] text-lg font-black bg-[#F8F9FD] border border-[#E8E8F0] rounded-xl px-4 py-3 text-[#17172B] focus:outline-none focus:border-[#5B3DF5]"
+                      className="w-full text-center tracking-[8px] text-lg font-black bg-[#F7F8FC] border border-[#E7E8EF] rounded-xl px-4 py-3 text-[#171923] focus:outline-none focus:border-[#5B45F5] focus:bg-white transition-all"
                     />
-                    <KeyRound className="w-4 h-4 text-[#62627A] absolute right-3.5 top-3.5" />
+                    <KeyRound className="w-4 h-4 text-[#6B7280] absolute right-3.5 top-3.5" />
                   </div>
                 </div>
 
                 <button
                   type="submit"
                   disabled={otpLoading}
-                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer flex items-center justify-center space-x-2"
+                  className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/25 transition-all cursor-pointer flex items-center justify-center space-x-2"
                 >
                   {otpLoading ? <span>Verifying...</span> : <span>Verify &amp; Enter Menu</span>}
                 </button>
@@ -761,7 +746,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                   <button
                     type="button"
                     onClick={() => setOtpSent(false)}
-                    className="text-[#62627A] hover:text-[#17172B] cursor-pointer"
+                    className="text-[#6B7280] hover:text-[#171923] cursor-pointer"
                   >
                     Change Email
                   </button>
@@ -769,7 +754,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                     type="button"
                     disabled={cooldown > 0 || otpLoading}
                     onClick={handleSendOtp}
-                    className="text-[#5B3DF5] font-bold hover:underline disabled:opacity-50 cursor-pointer"
+                    className="text-[#5B45F5] font-bold hover:underline disabled:opacity-50 cursor-pointer"
                   >
                     {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend Code'}
                   </button>
@@ -786,7 +771,7 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
                   <div>
                     <strong className="text-emerald-700 font-bold block">Active Order {activeOrder.orderNumber || `#000${activeOrder.id}`} in Progress</strong>
-                    <span className="text-[#62627A]">Status: {activeOrder.status} • {activeOrder.tableNumber || tableId}</span>
+                    <span className="text-[#6B7280]">Status: {activeOrder.status} • {activeOrder.tableNumber || tableId}</span>
                   </div>
                 </div>
                 <button
@@ -799,19 +784,20 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
             )}
 
             {/* ── MENU VIEW ──────────────────────────────────────────────────────── */}
-            <div className="space-y-6">
-              {/* HERO BANNER */}
-              <div className="relative overflow-hidden rounded-[24px] bg-gradient-to-r from-[#5B3DF5] via-[#6366F1] to-[#7C4DFF] text-white p-6 sm:p-10 shadow-xl shadow-indigo-500/10 border border-indigo-400/20">
+            <div className="space-y-8">
+              {/* HERO BANNER — PREMIUM POLISH */}
+              <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-[#5B45F5] via-[#4F36E3] to-[#7C3AED] text-white p-6 sm:p-10 shadow-2xl shadow-[#5B45F5]/20 border border-white/10">
                 <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-purple-500/20 rounded-full blur-2xl pointer-events-none" />
 
-                <div className="grid md:grid-cols-12 items-center gap-6 relative z-10">
+                <div className="grid md:grid-cols-12 items-center gap-6 sm:gap-8 relative z-10">
                   <div className="md:col-span-7 space-y-4">
-                    <div className="inline-flex items-center space-x-2 px-3 py-1 bg-white/15 backdrop-blur-md rounded-full text-[11px] font-extrabold tracking-wider uppercase">
+                    <div className="inline-flex items-center space-x-2 px-3.5 py-1 bg-white/15 backdrop-blur-md rounded-full text-[11px] font-extrabold tracking-wider uppercase border border-white/20">
                       <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                       <span>Fresh &amp; Smart Canteen</span>
                     </div>
 
-                    <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
+                    <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight font-display">
                       Good food.<br />Great mood. ✨
                     </h1>
 
@@ -822,58 +808,57 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
 
                     <button
                       onClick={() => navigate('/customer/cart')}
-                      className="inline-flex items-center space-x-2 px-5 py-2.5 bg-white text-[#5B3DF5] font-extrabold text-xs rounded-2xl shadow-lg hover:shadow-xl transition-all cursor-pointer"
+                      className="inline-flex items-center space-x-2 px-6 py-3 bg-white hover:bg-slate-50 text-[#5B45F5] font-extrabold text-xs rounded-2xl shadow-xl hover:shadow-2xl active:scale-95 transition-all cursor-pointer"
                     >
-                      <ShoppingBag className="w-4 h-4" />
+                      <ShoppingBag className="w-4 h-4 text-[#5B45F5]" />
                       <span>View Cart {totalCartQuantity > 0 ? `(${totalCartQuantity})` : ''}</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
+                      <ArrowRight className="w-4 h-4 text-[#5B45F5]" />
                     </button>
                   </div>
 
                   <div className="md:col-span-5 relative flex justify-center items-center">
-                    <div className="relative w-56 h-56 sm:w-64 sm:h-64 lg:w-72 lg:h-72 rounded-full overflow-hidden border-4 border-white/20 shadow-2xl transition-transform duration-500 hover:scale-105">
+                    <div className="relative w-56 h-56 sm:w-64 sm:h-64 lg:w-72 lg:h-72 rounded-3xl overflow-hidden border-4 border-white/20 shadow-2xl transition-transform duration-500 hover:scale-105">
                       <img
                         src={heroFoodImage}
                         alt="Featured Food"
                         className="w-full h-full object-cover"
                       />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
                     </div>
-                    <div className="absolute top-2 right-2 sm:right-6 bg-white text-[#17172B] px-3.5 py-2 rounded-2xl shadow-xl flex items-center space-x-2 border border-[#E8E8F0]">
+                    <div className="absolute top-3 right-3 sm:right-6 bg-white/95 backdrop-blur-md text-[#171923] px-4 py-2.5 rounded-2xl shadow-2xl flex items-center space-x-2.5 border border-[#E7E8EF]">
                       <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
                       <div>
                         <strong className="text-xs font-black block leading-none">4.9 ⭐</strong>
-                        <span className="text-[9px] text-[#62627A] font-semibold">100+ reviews</span>
+                        <span className="text-[9px] text-[#6B7280] font-bold">100+ reviews</span>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Search + Categories */}
+              {/* SEARCH BAR — PROFESSIONAL INPUT */}
               <div className="space-y-5">
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 relative">
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search for biryani, zinger burgers, chai, fries..."
-                      className="w-full bg-white border border-[#E8E8F0] rounded-2xl px-4 py-3.5 pl-11 text-xs text-[#17172B] placeholder-[#62627A] focus:outline-none focus:border-[#5B3DF5] focus:ring-4 focus:ring-[#5B3DF5]/10 transition-all shadow-sm"
-                    />
-                    <Search className="w-4 h-4 text-[#62627A] absolute left-4 top-4" />
-                  </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search for biryani, zinger burgers, chai, fries..."
+                    className="w-full bg-white border border-[#E7E8EF] rounded-2xl px-5 py-4 pl-12 text-xs text-[#171923] placeholder-[#6B7280] focus:outline-none focus:border-[#5B45F5] focus:ring-4 focus:ring-[#5B45F5]/10 transition-all shadow-sm font-medium"
+                  />
+                  <Search className="w-5 h-5 text-[#6B7280] absolute left-4 top-3.5" />
                 </div>
 
-                {/* Category Tabs */}
-                <div className="flex items-center space-x-2 overflow-x-auto pb-2 scrollbar-none">
+                {/* CATEGORY FILTERS */}
+                <div className="flex items-center space-x-2.5 overflow-x-auto pb-2 scrollbar-none">
                   {combinedCategories.map((cat) => (
                     <button
                       key={cat}
                       onClick={() => setCategory(cat)}
-                      className={`px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all duration-200 cursor-pointer ${
+                      className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold whitespace-nowrap transition-all duration-200 cursor-pointer ${
                         category === cat
-                          ? 'bg-[#5B3DF5] text-white shadow-md shadow-indigo-500/20'
-                          : 'bg-white border border-[#E8E8F0] text-[#62627A] hover:border-[#5B3DF5] hover:text-[#5B3DF5]'
+                          ? 'bg-[#5B45F5] text-white shadow-md shadow-[#5B45F5]/25 border border-[#5B45F5]'
+                          : 'bg-white border border-[#E7E8EF] text-[#6B7280] hover:border-[#5B45F5]/40 hover:text-[#5B45F5]'
                       }`}
                     >
                       {cat}
@@ -882,93 +867,125 @@ const CustomerDashboard = ({ user, onLogout, tableIdFromRoute }) => {
                 </div>
               </div>
 
-              {/* Menu Items Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {filteredMenu.map((item) => {
-                  const inCartQty = cart[item.id]?.quantity || 0;
-                  const isOutOfStock = item.stock <= 0;
+              {/* FOOD PRODUCTS GRID */}
+              {filteredMenu.length === 0 ? (
+                <div className="py-16 text-center text-xs font-bold text-[#6B7280] bg-white border border-[#E7E8EF] rounded-[24px] p-8 shadow-sm">
+                  <p className="text-sm font-extrabold text-[#171923]">No dishes found</p>
+                  <p className="text-xs text-[#6B7280] mt-1">Try searching for another dish or selecting a different category.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+                  {filteredMenu.map((item) => {
+                    const inCartQty = cart[item.id]?.quantity || 0;
+                    const isOutOfStock = item.stock <= 0;
 
-                  return (
-                    <div
-                      key={item.id}
-                      className={`bg-white border border-[#E8E8F0] rounded-[24px] overflow-hidden flex flex-col justify-between transition-all duration-300 hover:shadow-xl hover:border-indigo-200 group ${
-                        isOutOfStock ? 'opacity-60' : ''
-                      }`}
-                    >
-                      <div className="relative aspect-[4/3] w-full overflow-hidden bg-gray-100">
-                        <img
-                          src={getItemImage(item)}
-                          alt={item.name}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        />
-                        <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
-                          {item.category}
-                        </div>
-                        {item.prepTime && (
-                          <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-[#17172B] text-[10px] font-bold px-2 py-1 rounded-full flex items-center space-x-1 shadow-sm">
-                            <Clock className="w-3 h-3 text-[#5B3DF5]" />
-                            <span>{item.prepTime}m prep</span>
+                    return (
+                      <div
+                        key={item.id}
+                        className={`bg-white border border-[#E7E8EF] rounded-[24px] overflow-hidden flex flex-col justify-between transition-all duration-300 hover:shadow-xl hover:border-[#5B45F5]/30 group ${
+                          isOutOfStock ? 'opacity-60' : ''
+                        }`}
+                      >
+                        {/* Food Image Area */}
+                        <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100">
+                          <img
+                            src={getItemImage(item)}
+                            alt={item.name}
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          />
+                          <div className="absolute top-2.5 left-2.5 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
+                            {item.category}
                           </div>
-                        )}
-                      </div>
-
-                      <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
-                        <div>
-                          <div className="flex justify-between items-start">
-                            <h3 className="font-extrabold text-sm text-[#17172B] group-hover:text-[#5B3DF5] transition-colors line-clamp-1">
-                              {item.name}
-                            </h3>
-                          </div>
-                          <p className="text-[11px] text-[#62627A] mt-1 line-clamp-2 leading-relaxed">
-                            {item.description || 'Delicious freshly prepared canteen specialty.'}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-2 border-t border-[#F3F3F8]">
-                          <div>
-                            <span className="text-[10px] text-[#62627A] block font-semibold">Price</span>
-                            <span className="text-base font-black text-[#5B3DF5]">Rs. {item.price.toFixed(2)}</span>
-                          </div>
-
-                          {isOutOfStock ? (
-                            <span className="text-[10px] font-bold text-red-500 bg-red-50 px-3 py-1.5 rounded-xl border border-red-100">
-                              Sold Out
-                            </span>
-                          ) : inCartQty > 0 ? (
-                            <div className="flex items-center space-x-2 bg-[#F3EFFF] border border-[#5B3DF5]/20 rounded-xl p-1">
-                              <button
-                                onClick={() => removeFromCart(item.id)}
-                                className="w-7 h-7 bg-white text-[#5B3DF5] font-black rounded-lg flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer shadow-sm text-xs"
-                              >
-                                -
-                              </button>
-                              <span className="text-xs font-black text-[#5B3DF5] px-1">{inCartQty}</span>
-                              <button
-                                onClick={() => addToCart(item)}
-                                className="w-7 h-7 bg-[#5B3DF5] text-white font-black rounded-lg flex items-center justify-center hover:bg-indigo-600 transition-all cursor-pointer shadow-sm text-xs"
-                              >
-                                +
-                              </button>
+                          {item.prepTime && (
+                            <div className="absolute top-2.5 right-2.5 bg-white/90 backdrop-blur-md text-[#171923] text-[10px] font-bold px-2 py-1 rounded-full flex items-center space-x-1 shadow-sm">
+                              <Clock className="w-3 h-3 text-[#5B45F5]" />
+                              <span>{item.prepTime}m prep</span>
                             </div>
-                          ) : (
-                            <button
-                              onClick={() => addToCart(item)}
-                              className="px-4 py-2 bg-[#5B3DF5] hover:bg-indigo-600 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-indigo-500/10 cursor-pointer flex items-center space-x-1.5"
-                            >
-                              <CartIcon className="w-3.5 h-3.5" />
-                              <span>Add</span>
-                            </button>
                           )}
                         </div>
+
+                        {/* Food Info & Pricing */}
+                        <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
+                          <div>
+                            <h3 className="font-extrabold text-xs sm:text-sm text-[#171923] group-hover:text-[#5B45F5] transition-colors line-clamp-1">
+                              {item.name}
+                            </h3>
+                            <p className="text-[11px] text-[#6B7280] mt-1 line-clamp-2 leading-relaxed font-normal">
+                              {item.description || 'Delicious freshly prepared canteen specialty.'}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 border-t border-[#F3F4F8]">
+                            <div>
+                              <span className="text-[10px] text-[#6B7280] block font-semibold">Price</span>
+                              <span className="text-sm sm:text-base font-black text-[#5B45F5]">Rs. {item.price.toFixed(2)}</span>
+                            </div>
+
+                            {isOutOfStock ? (
+                              <span className="text-[10px] font-bold text-rose-500 bg-rose-50 px-2.5 py-1 rounded-xl border border-rose-100">
+                                Sold Out
+                              </span>
+                            ) : inCartQty > 0 ? (
+                              <div className="flex items-center space-x-1.5 bg-[#5B45F5]/10 border border-[#5B45F5]/20 rounded-xl p-1">
+                                <button
+                                  onClick={() => removeFromCart(item.id)}
+                                  className="w-6 h-6 sm:w-7 sm:h-7 bg-white text-[#5B45F5] font-black rounded-lg flex items-center justify-center hover:bg-rose-50 hover:text-rose-600 transition-all cursor-pointer shadow-sm text-xs"
+                                >
+                                  <Minus className="w-3 h-3" />
+                                </button>
+                                <span className="text-xs font-black text-[#5B45F5] px-1">{inCartQty}</span>
+                                <button
+                                  onClick={() => addToCart(item)}
+                                  className="w-6 h-6 sm:w-7 sm:h-7 bg-[#5B45F5] text-white font-black rounded-lg flex items-center justify-center hover:bg-[#4C38E8] transition-all cursor-pointer shadow-sm text-xs"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => addToCart(item)}
+                                className="px-3.5 py-2 bg-[#5B45F5] hover:bg-[#4C38E8] active:scale-95 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-[#5B45F5]/15 cursor-pointer flex items-center space-x-1.5"
+                              >
+                                <CartIcon className="w-3.5 h-3.5" />
+                                <span>Add</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </>
         )}
       </main>
+
+      {/* STICKY CART FOOTER BAR (Preserved Sticky Behavior & Badge) */}
+      {totalCartQuantity > 0 && isSessionVerified && (
+        <div className="sticky bottom-4 z-40 max-w-2xl mx-auto px-4 w-full animate-slide-up">
+          <div className="bg-[#171923] text-white p-4 rounded-3xl shadow-2xl flex items-center justify-between border border-slate-700/50 backdrop-blur-lg">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#5B45F5] text-white flex items-center justify-center font-black text-sm shadow-md">
+                {totalCartQuantity}
+              </div>
+              <div>
+                <strong className="text-xs font-bold block">Cart Subtotal</strong>
+                <span className="text-sm font-black text-emerald-400 font-mono">Rs. {totalCartPrice.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => navigate('/customer/cart')}
+              className="px-5 py-2.5 bg-[#5B45F5] hover:bg-[#4C38E8] text-white font-extrabold text-xs rounded-2xl shadow-lg transition-all flex items-center space-x-2 cursor-pointer"
+            >
+              <span>View Cart &amp; Checkout</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
